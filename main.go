@@ -18,10 +18,11 @@
 package main
 
 import (
-	"os"
 	"github.com/tchap/gocli"
+	"os"
 
 	"github.com/tchap/git-trunk/stage"
+	"github.com/tchap/git-trunk/update"
 )
 
 const version = "0.0.1"
@@ -30,14 +31,15 @@ func main() {
 	// Initialise the application.
 	trunk := gocli.NewApp("git-trunk")
 	trunk.UsageLine = "git-trunk SUBCMD "
-	trunk.Short = "TBD helper for Git"
+	trunk.Short = "Trunk Based Development helper for Git"
 	trunk.Version = version
 	trunk.Long = `
   git-trunk is a git plugin that provides some useful shortcuts for
   Trunk Based Development in Git. See the list of subcommands.`
 
 	// Register subscommands.
-	paprika.MustRegisterSubcommand(finish.Command)
+	paprika.MustRegisterSubcommand(stage.Command)
+	paprika.MustRegisterSubcommand(update.Command)
 
 	// Run the application.
 	paprika.Run(os.Args[1:])
