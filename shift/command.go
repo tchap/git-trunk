@@ -32,13 +32,13 @@ var Command = &gocli.Command{
 
     1. Pull develop, release and master.
     2. Close the current GitHub release milestone.
-	   This operation will fail unless all the assigned issues are closed.
+       This operation will fail unless all the assigned issues are closed.
     3. Tag the current release branch.
-	4. Reset the master branch to point to the newly created release tag.
-	5. Reset the release branch to point to develop (trunk).
-	6. If package.json is present in the repository, write the new version
-	   into the file and commit it into the release branch.
-	6. Push the release tag and all the branches (develop, release, master).
+    4. Reset the master branch to point to the newly created release tag.
+    5. Reset the release branch to point to develop (trunk).
+    6. If package.json is present in the repository, write the new version
+       into the file and commit it into the release branch.
+    7. Push the release tag and all the branches (develop, release, master).
 	`,
 	Action: run,
 }
@@ -51,5 +51,4 @@ func run(cmd *gocli.Command, args []string) {
 		cmd.Usage()
 		os.Exit(2)
 	}
-	next := args[0]
 }

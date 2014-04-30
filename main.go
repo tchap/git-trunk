@@ -38,8 +38,8 @@ func main() {
   Trunk Based Development on GitHub. See the list of subcommands.`
 
 	// Register subscommands.
-	paprika.MustRegisterSubcommand(shift.Command)
+	trunk.MustRegisterSubcommand(shift.Command)
 
 	// Run the application.
-	paprika.Run(os.Args[1:])
+	trunk.Run(os.Args[1:])
 }
