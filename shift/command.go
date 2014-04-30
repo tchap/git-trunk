@@ -25,7 +25,7 @@ import (
 )
 
 var Command = &gocli.Command{
-	UsageLine: "shift NEXT_VERSION",
+	UsageLine: "shift [-skip_milestones] NEXT_VERSION",
 	Short:     "perform the TBD branch shifting operation",
 	Long: `
   This subcommand performs the following actions:
@@ -40,6 +40,8 @@ var Command = &gocli.Command{
        into the file and commit it into the release branch.
     7. Push the release tag and all the branches (develop, release, master).
     8. Create a new GitHub milestone for the next release.
+
+  The milestones-handling steps are skipped when -skip_milestones is set.
 	`,
 	Action: run,
 }
