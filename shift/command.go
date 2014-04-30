@@ -39,6 +39,7 @@ var Command = &gocli.Command{
     6. If package.json is present in the repository, write the new version
        into the file and commit it into the release branch.
     7. Push the release tag and all the branches (develop, release, master).
+    8. Create a new GitHub milestone for the next release.
 	`,
 	Action: run,
 }
