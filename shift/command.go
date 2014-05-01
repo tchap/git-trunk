@@ -54,4 +54,42 @@ func run(cmd *gocli.Command, args []string) {
 		cmd.Usage()
 		os.Exit(2)
 	}
+
+	next := args[0]
+	matched, err := regexp.Match("^[0-9]+([.][0-9]){2}$", []byte(next))
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !matched {
+		log.Fatal("Invalid version string")
+	}
+
+	// Perform the shifting.
+	if err := shift(args[0]); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func shift(next string) error {
+	// Step 1: Pull the relevant branches.
+	repo, err := git.OpenRepository(os.Getcwd())
+	if err != nil {
+		return err
+	}
+
+	origin, err := repo.LoadRemote("origin")
+	if err != nil {
+		return err
+	}
+
+	signature, err := getUserSignature(repo)
+	if err != nil {
+		return err
+	}
+
+	if err := origin.Fetch(signature, "fetch origin"); err != nil {
+		return err
+	}
+
+	// ...
 }
