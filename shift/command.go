@@ -29,13 +29,22 @@ import (
 	"github.com/tchap/gocli"
 )
 
+const (
+	TrunkBranch   = "develop"
+	ReleaseBranch = "release"
+)
+
+var (
+	ErrDirty = errors.New("the repository is dirty")
+)
+
 var Command = &gocli.Command{
 	UsageLine: "shift [-remote=REMOTE] [-skip_milestones] NEXT_VERSION",
 	Short:     "perform the TBD branch shifting operation",
 	Long: `
   This subcommand performs the following actions:
 
-    1. Check that the workspace and the index are clean.
+    1. Make sure that the workspace and the index are clean.
     2. Pull develop, release and master.
     3. Close the current GitHub release milestone.
        This operation will fail unless all the assigned issues are closed.
@@ -64,10 +73,6 @@ func init() {
 		"Skip the milestones steps")
 }
 
-var (
-	ErrDirty = errors.New("the repository is dirty")
-)
-
 func run(cmd *gocli.Command, args []string) {
 	log.SetFlags(0)
 
@@ -95,51 +100,138 @@ func run(cmd *gocli.Command, args []string) {
 func shift(next string) (err error) {
 	// Step 1: Make sure that the workspace and the index are clean.
 	log.Print("---> Performing the initial repository checkup")
-	out, err := exec.Command("git", "status", "--porcelain").Output()
+	output, err := exec.Command("git", "status", "--porcelain").Output()
 	if err != nil {
 		return
 	}
-	if len(out) != 0 {
+	if len(output) != 0 {
 		return ErrDirty
 	}
 
-	// Step 1: Pull the relevant branches.
+	// Step 2: Pull develop and release.
 	log.Printf("---> Fetching %v\n", remote)
-	if e := exec.Command("git", "remote", "update", remote).Run(); e != nil {
-		return e
+	output, err = exec.Command("git", "remote", "update", remote).CombinedOutput()
+	if err != nil {
+		log.Print(string(output))
+		return
 	}
 
-	currentRaw, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	output, err = exec.Command("git", "rev-parse", "HEAD").Output()
 	if err != nil {
 		return
 	}
-	current := string(bytes.TrimSpace(currentRaw))
+	current := string(bytes.TrimSpace(output))
 	defer func() {
-		log.Printf("---> Checking out the original branch (%v)\n", current)
-		if e := exec.Command("git", "checkout", current).Run(); e != nil {
-			err = e
+		log.Printf("---> Checking out the origin branch (%v)\n", current)
+		output, ex := exec.Command("git", "checkout", current).CombinedOutput()
+		if ex != nil {
+			log.Print(output)
+			if err == nil {
+				err = ex
+			}
 		}
 	}()
 
+	// Start blocking os.Interrupt signal, the following actions are fast to
+	// perform and there is no reason to try to interrupt them really.
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, os.Interrupt)
+	closeCh := make(chan struct{})
+	defer func() {
+		close(closeCh)
+	}()
 	go func() {
 		for {
-			<-signalCh
-			log.Print("Signal received and ignored, wait for the action to finish.")
+			select {
+			case <-signalCh:
+				log.Print("Signal received but ignored. Wait for the action to finish.")
+			case <-closeCh:
+				return
+			}
 		}
 	}()
 
-	for _, branch := range [...]string{"develop", "release"} {
-		log.Printf("---> Merging %v/%v into %v (fast-forward only)", remote, branch, branch)
-		if e := exec.Command("git", "checkout", branch).Run(); e != nil {
-			return e
-		}
-
-		if e := exec.Command("git", "merge", "--ff-only", remote+"/"+branch).Run(); e != nil {
-			return e
-		}
+	// Merge remote/TrunkBranch into TrunkBranch.
+	log.Printf("---> Merging %v/%v into %v (fast-forward only)\n",
+		remote, TrunkBranch, TrunkBranch)
+	output, err = exec.Command("git", "checkout", TrunkBranch).CombinedOutput()
+	if err != nil {
+		log.Print(string(output))
+		return
 	}
 
+	output, err = exec.Command("git", "rev-parse", TrunkBranch).Output()
+	if err != nil {
+		log.Printf("failed to rev-parse %v\n", TrunkBranch)
+		return
+	}
+	trunkSHA := string(bytes.TrimSpace(output))
+
+	output, err = exec.Command("git", "merge", "--ff-only",
+		remote+"/"+TrunkBranch).CombinedOutput()
+	if err != nil {
+		log.Print(string(output))
+		return
+	}
+	defer func() {
+		if err != nil {
+			reset(TrunkBranch, trunkSHA)
+		}
+	}()
+
+	// Merge remote/ReleaseBranch into ReleaseBranch.
+	log.Printf("---> Merging %v/%v into %v (fast-forward only)\n",
+		remote, ReleaseBranch, ReleaseBranch)
+	output, err = exec.Command("git", "checkout", ReleaseBranch).CombinedOutput()
+	if err != nil {
+		log.Print(string(output))
+		return
+	}
+
+	output, err = exec.Command("git", "rev-parse", ReleaseBranch).Output()
+	if err != nil {
+		log.Printf("failed to rev-parse %v\n", ReleaseBranch)
+		return err
+	}
+	releaseSHA := string(bytes.TrimSpace(output))
+
+	output, err = exec.Command("git", "merge", "--ff-only",
+		remote+"/"+ReleaseBranch).CombinedOutput()
+	if err != nil {
+		log.Print(string(output))
+		return err
+	}
+	defer func() {
+		if err != nil {
+			reset(ReleaseBranch, releaseSHA)
+		}
+	}()
+
+	//    3. Close the current GitHub release milestone.
+	//       This operation will fail unless all the assigned issues are closed.
+	//    4. Tag the current release branch.
+	//    5. Reset the master branch to point to the newly created release tag.
+	//    6. Reset the release branch to point to develop (trunk).
+	//    7. If package.json is present in the repository, write the new version
+	//       into the file and commit it into the release branch.
+	//    8. Push the release tag and all the branches (develop, release, master).
+	//    9. Create a new GitHub milestone for the next release.
+
 	return nil
+}
+
+func reset(branch, hexsha string) {
+	log.Printf("---> Resetting %v to the original position\n", branch)
+
+	output, err := exec.Command("git", "checkout", branch).CombinedOutput()
+	if err != nil {
+		log.Print(string(output))
+		return
+	}
+
+	output, err = exec.Command("git", "reset", "--hard", hexsha).CombinedOutput()
+	if err != nil {
+		log.Print(string(output))
+		return
+	}
 }
