@@ -37,17 +37,17 @@ const (
 )
 
 var (
-	ErrDirty = errors.New("the repository is dirty")
+	ErrDirtyRepository = errors.New("the repository is dirty")
 )
 
 var Command = &gocli.Command{
-	UsageLine: "shift [-remote=REMOTE] [-skip_milestones] NEXT_VERSION",
-	Short:     "perform the TBD branch shifting operation",
+	UsageLine: "shift [-remote=REMOTE] [-skip_milestones] NEXT",
+	Short:     "perform the branch shifting operation",
 	Long: `
   This subcommand performs the following actions:
 
     1. Make sure that the workspace and the index are clean.
-    2. Pull develop, release and master.
+    2. Pull develop and release.
     3. Close the current GitHub release milestone.
        This operation will fail unless all the assigned issues are closed.
     4. Tag the current release branch.
@@ -59,6 +59,10 @@ var Command = &gocli.Command{
     9. Create a new GitHub milestone for the next release.
 
   The milestones-handling steps are skipped when -skip_milestones is set.
+
+  NEXT must be a version number in the form of x.y.z, or "auto", in which case
+  the next release number is generated from the previous one by incrementing
+  the release number (the "z" part).
 	`,
 	Action: run,
 }
@@ -107,7 +111,7 @@ func shift(next string) (err error) {
 		return
 	}
 	if len(output) != 0 {
-		return ErrDirty
+		return ErrDirtyRepository
 	}
 
 	// Step 2: Pull develop and release.
