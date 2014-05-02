@@ -122,7 +122,7 @@ func shift(next string) (err error) {
 	}
 	current := string(bytes.TrimSpace(output))
 	defer func() {
-		log.Printf("---> Checking out the origin branch (%v)\n", current)
+		log.Printf("---> Checking out the original branch (%v)\n", current)
 		output, ex := exec.Command("git", "checkout", current).CombinedOutput()
 		if ex != nil {
 			log.Print(output)
