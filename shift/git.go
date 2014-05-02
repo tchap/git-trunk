@@ -18,8 +18,9 @@
 package shift
 
 import (
-	git "github.com/libgit2/git2go"
 	"time"
+
+	"github.com/libgit2/git2go"
 )
 
 func getUserSignature(repo *git.Repository) (*git.Signature, error) {
@@ -42,5 +43,24 @@ func getUserSignature(repo *git.Repository) (*git.Signature, error) {
 		Name:  name,
 		Email: email,
 		When:  time.Now(),
+	}, nil
+}
+
+func setCallbacks(remote *git.Remote) {
+	remote.SetCallbacks(&git.RemoteCallbacks{
+		CredentialsCallback: credentialsCallback,
+	})
+}
+
+func credentialsCallback(url, username string, allowedTypes git.CredType) (int, *git.Cred) {
+	ret, cred := git.NewCredSshKeyFromAgent(username)
+	return ret, &cred
+}
+
+func checkout(repo *git.Repository, branchName string) (*git.Branch, error) {
+	branch, err := repo.LookupBranch(branch, git.BranchLocal)
+	if err != nil {
+		return nil, err
 	}
+
 }

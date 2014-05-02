@@ -20,12 +20,14 @@ package shift
 import (
 	"log"
 	"os"
+	"regexp"
 
+	"github.com/libgit2/git2go"
 	"github.com/tchap/gocli"
 )
 
 var Command = &gocli.Command{
-	UsageLine: "shift [-skip_milestones] NEXT_VERSION",
+	UsageLine: "shift [-remote=REMOTE] [-skip_milestones] NEXT_VERSION",
 	Short:     "perform the TBD branch shifting operation",
 	Long: `
   This subcommand performs the following actions:
@@ -44,6 +46,18 @@ var Command = &gocli.Command{
   The milestones-handling steps are skipped when -skip_milestones is set.
 	`,
 	Action: run,
+}
+
+var (
+	remote         string = "origin"
+	skipMilestones bool
+)
+
+func init() {
+	Command.Flags.StringVar(&remote, "remote", remote,
+		"Git remote to modify")
+	Command.Flags.BoolVar(&skipMilestones, "skip_milestones", skipMilestones,
+		"Skip the milestones steps")
 }
 
 func run(cmd *gocli.Command, args []string) {
@@ -72,24 +86,52 @@ func run(cmd *gocli.Command, args []string) {
 
 func shift(next string) error {
 	// Step 1: Pull the relevant branches.
-	repo, err := git.OpenRepository(os.Getcwd())
+	wd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
 
-	origin, err := repo.LoadRemote("origin")
+	repo, err := git.OpenRepository(wd)
 	if err != nil {
 		return err
 	}
+
+	origin, err := repo.LoadRemote(remote)
+	if err != nil {
+		return err
+	}
+
+	setCallbacks(origin)
 
 	signature, err := getUserSignature(repo)
 	if err != nil {
 		return err
 	}
 
-	if err := origin.Fetch(signature, "fetch origin"); err != nil {
+	log.Printf("---> Fetching %v\n", remote)
+	if err := origin.Fetch(signature, "fetch "+remote); err != nil {
 		return err
 	}
 
-	// ...
+	mergeOpts, err := git.DefaultMergeOptions()
+	if err != nil {
+		return err
+	}
+
+	for _, branch := range [...]string{"develop", "release"} {
+		log.Printf("---> Merging %v/%v into %v (fast-forward only)", remote, branch, branch)
+		b, err := checkout(repo, branch)
+		if err != nil {
+			return err
+		}
+
+		head, err := repo.MergeHeadFromRef(b.Reference)
+		if err != nil {
+			return err
+		}
+
+		//if err := repo.Merge([]*git.MergeHead{head}, git.DefaultMergeOptions(), )
+	}
+
+	return nil
 }
