@@ -116,7 +116,7 @@ func shift(next string) (err error) {
 		return
 	}
 
-	output, err = exec.Command("git", "rev-parse", "HEAD").Output()
+	output, err = exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
 		return
 	}
