@@ -18,11 +18,13 @@
 package shift
 
 import (
+	"bytes"
 	"log"
 	"os"
+	"os/exec"
+	"os/signal"
 	"regexp"
 
-	"github.com/libgit2/git2go"
 	"github.com/tchap/gocli"
 )
 
@@ -84,53 +86,43 @@ func run(cmd *gocli.Command, args []string) {
 	}
 }
 
-func shift(next string) error {
+func shift(next string) (err error) {
 	// Step 1: Pull the relevant branches.
-	wd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-
-	repo, err := git.OpenRepository(wd)
-	if err != nil {
-		return err
-	}
-
-	origin, err := repo.LoadRemote(remote)
-	if err != nil {
-		return err
-	}
-
-	setCallbacks(origin)
-
-	signature, err := getUserSignature(repo)
-	if err != nil {
-		return err
-	}
-
 	log.Printf("---> Fetching %v\n", remote)
-	if err := origin.Fetch(signature, "fetch "+remote); err != nil {
-		return err
+	if e := exec.Command("git", "remote", "update", remote).Run(); e != nil {
+		return e
 	}
 
-	mergeOpts, err := git.DefaultMergeOptions()
+	currentRaw, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
-		return err
+		return
 	}
+	current := string(bytes.TrimSpace(currentRaw))
+	defer func() {
+		log.Printf("---> Checking out the original branch (%v)\n", current)
+		if e := exec.Command("git", "checkout", current).Run(); e != nil {
+			err = e
+		}
+	}()
+
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, os.Interrupt)
+	go func() {
+		for {
+			<-signalCh
+			log.Print("Signal received and ignored, wait for the action to finish.")
+		}
+	}()
 
 	for _, branch := range [...]string{"develop", "release"} {
 		log.Printf("---> Merging %v/%v into %v (fast-forward only)", remote, branch, branch)
-		b, err := checkout(repo, branch)
-		if err != nil {
-			return err
+		if e := exec.Command("git", "checkout", branch).Run(); e != nil {
+			return e
 		}
 
-		head, err := repo.MergeHeadFromRef(b.Reference)
-		if err != nil {
-			return err
+		if e := exec.Command("git", "merge", "--ff-only", remote+"/"+branch).Run(); e != nil {
+			return e
 		}
-
-		//if err := repo.Merge([]*git.MergeHead{head}, git.DefaultMergeOptions(), )
 	}
 
 	return nil
