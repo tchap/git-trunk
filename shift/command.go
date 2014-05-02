@@ -19,6 +19,7 @@ package shift
 
 import (
 	"bytes"
+	"errors"
 	"log"
 	"os"
 	"os/exec"
@@ -34,16 +35,17 @@ var Command = &gocli.Command{
 	Long: `
   This subcommand performs the following actions:
 
-    1. Pull develop, release and master.
-    2. Close the current GitHub release milestone.
+    1. Check that the workspace and the index are clean.
+    2. Pull develop, release and master.
+    3. Close the current GitHub release milestone.
        This operation will fail unless all the assigned issues are closed.
-    3. Tag the current release branch.
-    4. Reset the master branch to point to the newly created release tag.
-    5. Reset the release branch to point to develop (trunk).
-    6. If package.json is present in the repository, write the new version
+    4. Tag the current release branch.
+    5. Reset the master branch to point to the newly created release tag.
+    6. Reset the release branch to point to develop (trunk).
+    7. If package.json is present in the repository, write the new version
        into the file and commit it into the release branch.
-    7. Push the release tag and all the branches (develop, release, master).
-    8. Create a new GitHub milestone for the next release.
+    8. Push the release tag and all the branches (develop, release, master).
+    9. Create a new GitHub milestone for the next release.
 
   The milestones-handling steps are skipped when -skip_milestones is set.
 	`,
@@ -61,6 +63,10 @@ func init() {
 	Command.Flags.BoolVar(&skipMilestones, "skip_milestones", skipMilestones,
 		"Skip the milestones steps")
 }
+
+var (
+	ErrDirty = errors.New("the repository is dirty")
+)
 
 func run(cmd *gocli.Command, args []string) {
 	log.SetFlags(0)
@@ -82,11 +88,21 @@ func run(cmd *gocli.Command, args []string) {
 
 	// Perform the shifting.
 	if err := shift(args[0]); err != nil {
-		log.Fatal(err)
+		log.Fatal("\nError: ", err)
 	}
 }
 
 func shift(next string) (err error) {
+	// Step 1: Make sure that the workspace and the index are clean.
+	log.Print("---> Performing the initial repository checkup")
+	out, err := exec.Command("git", "status", "--porcelain").Output()
+	if err != nil {
+		return
+	}
+	if len(out) != 0 {
+		return ErrDirty
+	}
+
 	// Step 1: Pull the relevant branches.
 	log.Printf("---> Fetching %v\n", remote)
 	if e := exec.Command("git", "remote", "update", remote).Run(); e != nil {
