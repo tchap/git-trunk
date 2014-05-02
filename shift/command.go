@@ -19,7 +19,9 @@ package shift
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -162,7 +164,7 @@ func shift(next string) (err error) {
 
 	output, err = exec.Command("git", "rev-parse", TrunkBranch).Output()
 	if err != nil {
-		log.Printf("failed to rev-parse %v\n", TrunkBranch)
+		log.Print(string(output))
 		return
 	}
 	trunkSHA := string(bytes.TrimSpace(output))
@@ -188,10 +190,27 @@ func shift(next string) (err error) {
 		return
 	}
 
+	log.Println("---> Reading package.json, if possible")
+	var version string
+	var packageJson struct {
+		Version string
+	}
+	content, ex := ioutil.ReadFile("package.json")
+	if ex == nil {
+		err = json.Unmarshal(content, &packageJson)
+		if err != nil {
+			return
+		}
+		version = packageJson.Version
+	} else {
+		log.Printf("Failed to read package.json: %v\n", err)
+	}
+	log.Printf("     (current version string: %v)\n", version)
+
 	output, err = exec.Command("git", "rev-parse", ReleaseBranch).Output()
 	if err != nil {
-		log.Printf("failed to rev-parse %v\n", ReleaseBranch)
-		return err
+		log.Print(string(output))
+		return
 	}
 	releaseSHA := string(bytes.TrimSpace(output))
 
