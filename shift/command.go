@@ -41,8 +41,8 @@ var (
 
 var Command = &gocli.Command{
 	UsageLine: `
-    shift [-remote=REMOTE] [-version_pattern=PATTERN]
-          [-skip_milestones] NEXT`,
+  shift [-remote=REMOTE] [-version_pattern=PATTERN]
+        [-skip_milestones] NEXT`,
 	Short: "perform the branch shifting operation",
 	Long: `
   This subcommand performs the following actions:
@@ -78,9 +78,9 @@ func init() {
 	Command.Flags.StringVar(&remote, "remote", remote,
 		"Git remote to modify")
 	Command.Flags.StringVar(&versionPattern, "version_pattern", versionPattern,
-		"Pattern to use to verify the version string")
+		"version pattern")
 	Command.Flags.BoolVar(&skipMilestones, "skip_milestones", skipMilestones,
-		"Skip the milestones steps")
+		"skip the milestones steps")
 }
 
 func run(cmd *gocli.Command, args []string) {
