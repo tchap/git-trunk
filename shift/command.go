@@ -226,11 +226,20 @@ func reset(branch, hexsha string) {
 }
 
 func checkSynchronized(b1, b2 string) error {
-	output, err := exec.Command("git", "diff", "--name-only", b1, b2).Output()
-	if err != nil {
+	var (
+		stdout bytes.Buffer
+		stderr bytes.Buffer
+	)
+	cmd := exec.Command("git", "diff", "--name-only", b1, b2)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		log.Print(stderr.String())
 		return err
 	}
-	if len(output) != 0 {
+
+	if len(stdout.Bytes()) != 0 {
 		return fmt.Errorf("refs %v and %v differ", b1, b2)
 	}
 	return nil
