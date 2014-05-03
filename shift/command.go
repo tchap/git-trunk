@@ -254,6 +254,5 @@ func hexsha(ref string) (string, error) {
 		log.Print(stderr.String())
 		return "", err
 	}
-
 	return string(bytes.TrimSpace(stdout.Bytes())), nil
 }
