@@ -230,7 +230,7 @@ func checkSynchronized(b1, b2 string) error {
 		stdout bytes.Buffer
 		stderr bytes.Buffer
 	)
-	cmd := exec.Command("git", "diff", "--name-only", b1, b2)
+	cmd := exec.Command("git", "diff", "--name-only", b1, b2, "--")
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
