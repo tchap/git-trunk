@@ -159,40 +159,36 @@ func shift(next string) (err error) {
 	// Make sure that develop and release are synchronized with their remote counterparts.
 	trunkRemote := remote + "/" + TrunkBranch
 	log.Printf("---> Checking whether %v and %v are synchronized\n", TrunkBranch, trunkRemote)
-	err = checkSynchronized(TrunkBranch, trunkRemote)
+	err = checkBranchesEqual(TrunkBranch, trunkRemote)
 	if err != nil {
 		return
 	}
 
 	releaseRemote := remote + "/" + ReleaseBranch
 	log.Printf("---> Checking whether %v and %v are synchronized\n", ReleaseBranch, releaseRemote)
-	err = checkSynchronized(ReleaseBranch, releaseRemote)
+	err = checkBranchesEqual(ReleaseBranch, releaseRemote)
 	if err != nil {
 		return
 	}
 
 	// Rollback develop and release in case something goes wrong.
-	output, err = exec.Command("git", "rev-parse", TrunkBranch).Output()
+	trunkHexsha, err := hexsha(TrunkBranch)
 	if err != nil {
-		log.Print(string(output))
 		return
 	}
-	trunkSHA := string(bytes.TrimSpace(output))
 	defer func() {
 		if err != nil {
-			reset(TrunkBranch, trunkSHA)
+			reset(TrunkBranch, trunkHexsha)
 		}
 	}()
 
-	output, err = exec.Command("git", "rev-parse", ReleaseBranch).Output()
+	releaseHexsha, err := hexsha(ReleaseBranch)
 	if err != nil {
-		log.Print(string(output))
 		return
 	}
-	releaseSHA := string(bytes.TrimSpace(output))
 	defer func() {
 		if err != nil {
-			reset(ReleaseBranch, releaseSHA)
+			reset(ReleaseBranch, releaseHexsha)
 		}
 	}()
 
@@ -225,7 +221,7 @@ func reset(branch, hexsha string) {
 	}
 }
 
-func checkSynchronized(b1, b2 string) error {
+func checkBranchesEqual(b1, b2 string) error {
 	var (
 		stdout bytes.Buffer
 		stderr bytes.Buffer
@@ -243,4 +239,21 @@ func checkSynchronized(b1, b2 string) error {
 		return fmt.Errorf("refs %v and %v differ", b1, b2)
 	}
 	return nil
+}
+
+func hexsha(ref string) (string, error) {
+	var (
+		stdout bytes.Buffer
+		stderr bytes.Buffer
+	)
+	cmd := exec.Command("git", "rev-parse", ref)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		log.Print(stderr.String())
+		return "", err
+	}
+
+	return string(bytes.TrimSpace(stdout.Bytes())), nil
 }
