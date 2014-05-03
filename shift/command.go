@@ -19,9 +19,8 @@ package shift
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
-	"io/ioutil"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -47,7 +46,7 @@ var Command = &gocli.Command{
   This subcommand performs the following actions:
 
     1. Make sure that the workspace and the index are clean.
-    2. Pull develop and release.
+    2. Reset develop and release to point to their remote counterparts.
     3. Close the current GitHub release milestone.
        This operation will fail unless all the assigned issues are closed.
     4. Tag the current release branch.
@@ -105,7 +104,7 @@ func run(cmd *gocli.Command, args []string) {
 
 func shift(next string) (err error) {
 	// Step 1: Make sure that the workspace and the index are clean.
-	log.Print("---> Performing the initial repository checkup")
+	log.Print("---> Performing the initial repository check")
 	output, err := exec.Command("git", "status", "--porcelain").Output()
 	if err != nil {
 		return
@@ -114,9 +113,9 @@ func shift(next string) (err error) {
 		return ErrDirtyRepository
 	}
 
-	// Step 2: Pull develop and release.
+	// Step 2: Reset develop and release to point to their remote counterparts.
 	log.Printf("---> Fetching %v\n", remote)
-	output, err = exec.Command("git", "remote", "update", remote).CombinedOutput()
+	output, err = exec.Command("git", "fetch", remote).CombinedOutput()
 	if err != nil {
 		log.Print(string(output))
 		return
@@ -157,59 +156,33 @@ func shift(next string) (err error) {
 		}
 	}()
 
-	// Merge remote/TrunkBranch into TrunkBranch.
-	log.Printf("---> Merging %v/%v into %v (fast-forward only)\n",
-		remote, TrunkBranch, TrunkBranch)
-	output, err = exec.Command("git", "checkout", TrunkBranch).CombinedOutput()
+	// Make sure that develop and release are synchronized with their remote counterparts.
+	trunkRemote := remote + "/" + TrunkBranch
+	log.Printf("---> Checking whether %v and %v are synchronized\n", TrunkBranch, trunkRemote)
+	err = checkSynchronized(TrunkBranch, trunkRemote)
 	if err != nil {
-		log.Print(string(output))
 		return
 	}
 
+	releaseRemote := remote + "/" + ReleaseBranch
+	log.Printf("---> Checking whether %v and %v are synchronized\n", ReleaseBranch, releaseRemote)
+	err = checkSynchronized(ReleaseBranch, releaseRemote)
+	if err != nil {
+		return
+	}
+
+	// Rollback develop and release in case something goes wrong.
 	output, err = exec.Command("git", "rev-parse", TrunkBranch).Output()
 	if err != nil {
 		log.Print(string(output))
 		return
 	}
 	trunkSHA := string(bytes.TrimSpace(output))
-
-	output, err = exec.Command("git", "merge", "--ff-only",
-		remote+"/"+TrunkBranch).CombinedOutput()
-	if err != nil {
-		log.Print(string(output))
-		return
-	}
 	defer func() {
 		if err != nil {
 			reset(TrunkBranch, trunkSHA)
 		}
 	}()
-
-	// Merge remote/ReleaseBranch into ReleaseBranch.
-	log.Printf("---> Merging %v/%v into %v (fast-forward only)\n",
-		remote, ReleaseBranch, ReleaseBranch)
-	output, err = exec.Command("git", "checkout", ReleaseBranch).CombinedOutput()
-	if err != nil {
-		log.Print(string(output))
-		return
-	}
-
-	log.Println("---> Reading package.json, if possible")
-	var version string
-	var packageJson struct {
-		Version string
-	}
-	content, ex := ioutil.ReadFile("package.json")
-	if ex == nil {
-		err = json.Unmarshal(content, &packageJson)
-		if err != nil {
-			return
-		}
-		version = packageJson.Version
-	} else {
-		log.Printf("Failed to read package.json: %v\n", err)
-	}
-	log.Printf("     (current version string: %v)\n", version)
 
 	output, err = exec.Command("git", "rev-parse", ReleaseBranch).Output()
 	if err != nil {
@@ -217,13 +190,6 @@ func shift(next string) (err error) {
 		return
 	}
 	releaseSHA := string(bytes.TrimSpace(output))
-
-	output, err = exec.Command("git", "merge", "--ff-only",
-		remote+"/"+ReleaseBranch).CombinedOutput()
-	if err != nil {
-		log.Print(string(output))
-		return err
-	}
 	defer func() {
 		if err != nil {
 			reset(ReleaseBranch, releaseSHA)
@@ -257,4 +223,15 @@ func reset(branch, hexsha string) {
 		log.Print(string(output))
 		return
 	}
+}
+
+func checkSynchronized(b1, b2 string) error {
+	output, err := exec.Command("git", "diff", "--name-only", b1, b2).Output()
+	if err != nil {
+		return err
+	}
+	if len(output) != 0 {
+		return fmt.Errorf("refs %v and %v differ", b1, b2)
+	}
+	return nil
 }
