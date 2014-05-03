@@ -221,26 +221,6 @@ func reset(branch, hexsha string) {
 	}
 }
 
-func checkBranchesEqual(b1, b2 string) error {
-	var (
-		stdout bytes.Buffer
-		stderr bytes.Buffer
-	)
-	cmd := exec.Command("git", "diff", "--name-only", b1, b2, "--")
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		log.Print(stderr.String())
-		return err
-	}
-
-	if len(stdout.Bytes()) != 0 {
-		return fmt.Errorf("refs %v and %v differ", b1, b2)
-	}
-	return nil
-}
-
 func hexsha(ref string) (string, error) {
 	var (
 		stdout bytes.Buffer
@@ -255,4 +235,20 @@ func hexsha(ref string) (string, error) {
 		return "", err
 	}
 	return string(bytes.TrimSpace(stdout.Bytes())), nil
+}
+
+func checkBranchesEqual(b1, b2 string) error {
+	hexsha1, err := hexsha(b1)
+	if err != nil {
+		return err
+	}
+	hexsha2, err := hexsha(b2)
+	if err != nil {
+		return err
+	}
+
+	if hexsha1 != hexsha2 {
+		return fmt.Errorf("refs %v and %v differ", b1, b2)
+	}
+	return nil
 }
