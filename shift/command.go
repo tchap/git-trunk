@@ -40,8 +40,10 @@ var (
 )
 
 var Command = &gocli.Command{
-	UsageLine: "shift [-remote=REMOTE] [-skip_milestones] NEXT",
-	Short:     "perform the branch shifting operation",
+	UsageLine: `
+    shift [-remote=REMOTE] [-version_pattern=PATTERN]
+          [-skip_milestones] NEXT`,
+	Short: "perform the branch shifting operation",
 	Long: `
   This subcommand performs the following actions:
 
@@ -68,12 +70,15 @@ var Command = &gocli.Command{
 
 var (
 	remote         string = "origin"
+	versionPattern string = "^[0-9]+([.][0-9]+){2}$"
 	skipMilestones bool
 )
 
 func init() {
 	Command.Flags.StringVar(&remote, "remote", remote,
 		"Git remote to modify")
+	Command.Flags.StringVar(&versionPattern, "version_pattern", versionPattern,
+		"Pattern to use to verify the version string")
 	Command.Flags.BoolVar(&skipMilestones, "skip_milestones", skipMilestones,
 		"Skip the milestones steps")
 }
@@ -88,12 +93,14 @@ func run(cmd *gocli.Command, args []string) {
 	}
 
 	next := args[0]
-	matched, err := regexp.Match("^[0-9]+([.][0-9]){2}$", []byte(next))
-	if err != nil {
-		log.Fatal(err)
-	}
-	if !matched {
-		log.Fatal("Invalid version string")
+	if next != "auto" {
+		matched, err := regexp.Match(versionPattern, []byte(next))
+		if err != nil {
+			log.Fatal(err)
+		}
+		if !matched {
+			log.Fatal("Invalid version string")
+		}
 	}
 
 	// Perform the shifting.
