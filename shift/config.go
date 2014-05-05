@@ -24,7 +24,7 @@ import (
 	"gonuts.org/v1/yaml"
 )
 
-type Config struct {
+type LocalConfig struct {
 	TrunkBranch       string `yaml:"trunk_branch"`
 	ReleaseBranch     string `yaml:"release_branch"`
 	ProductionBranch  string `yaml:"production_branch"`
@@ -33,7 +33,14 @@ type Config struct {
 	DisableCircleCI   bool   `yaml:"disable_circleci"`
 }
 
-func ReadConfig(path string) (*Config, error) {
+func ReadLocalConfig() (*LocalConfig, error) {
+	// Generate the local config file path.
+	root, err := RepositoryRootAbsolutePath()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(root, common.LocalConfigFileName)
+
 	// Read the config file.
 	file, err := os.Open(path)
 	if err != nil {
@@ -51,7 +58,7 @@ func ReadConfig(path string) (*Config, error) {
 
 	// Parse the content.
 	var configFile struct {
-		Shift *Config `yaml:"shift"`
+		Shift *LocalConfig `yaml:"shift"`
 	}
 	if err := yaml.Unmarshal(content, &configFile); err != nil {
 		return nil, err
@@ -72,15 +79,6 @@ func ReadConfig(path string) (*Config, error) {
 		config.VersionPattern = common.DefaultVersionPattern
 	}
 
-	// Return the complete Config struct.
+	// Return the complete LocalConfig struct.
 	return config.Shift, nil
-}
-
-func ReadLocalConfig() (*Config, error) {
-	root, err := RepositoryRootAbsolutePath()
-	if err != nil {
-		return nil, err
-	}
-
-	return ReadConfig(filepath.Join(root, common.ConfigFileName))
 }

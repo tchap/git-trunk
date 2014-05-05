@@ -300,9 +300,9 @@ func fetch(remote string) error {
 	}
 }
 
-func checkReleaseBuild(config *GlobalConfig) error {
+func checkReleaseBuild(localConfig *LocalConfig, globalConfig *GlobalConfig) error {
 	// Make sure the Circle CI token is specified in the config.
-	if config.CircleCiToken == "" {
+	if globalConfig.CircleCiToken == "" {
 		return newErrConfig("circleci_token")
 	}
 
@@ -342,7 +342,7 @@ func checkReleaseBuild(config *GlobalConfig) error {
 	// Fetch the latest release build from Circle CI.
 	branch := localConfig.ReleaseBranch
 	project := circleci.NewClient(config.CircleCiToken).Project(owner, repository)
-	builds, err := project.Builds(&circleci.BuildOptions{
+	builds, err := project.Builds(&circleci.BuildFilter{
 		Branch: branch,
 		Limit:  1,
 	})
