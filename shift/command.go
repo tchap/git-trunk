@@ -121,17 +121,38 @@ func shift(config *Config, next string) (err error) {
 	if err != nil {
 		return err
 	}
+	var (
+		trunkBranch   = config.TrunkBranch
+		releaseBranch = config.ReleaseBranch
+		masterBranch  = config.ProductionBranch
+	)
 
-	// Step 1: Make sure that the workspace and the index are clean.
+	// Step 1: Make sure that the workspace and Git index are clean.
 	log.Print("---> Checking the workspace and Git index")
-	if err := ensureCleanWorkspaceAndIndex(); err != nil {
+	if err := git.EnsureCleanWorkingTree(); err != nil {
 		return err
 	}
 
-	// Step 2: Make sure that TrunkBranch and ReleaseBranch are up to date.
+	// Step 2: Make sure that develop and release are up to date.
 	log.Printf("---> Fetching %v\n", remote)
-	if err := git.fetch(remote); err != nil {
+	if err := git.Fetch(remote); err != nil {
 		return err
+	}
+
+	log.Println("---> Checking whether the local and remote refs are synchronized")
+	err = git.EnsureBranchesEqual(trunkBranch, remote+"/"+trunkBranch)
+	if err != nil {
+		return
+	}
+	err = git.EnsureBranchesEqual(releaseBranch, remote+"/"+releaseBranch)
+	if err != nil {
+		return
+	}
+
+	// Step 3: Make sure that the release CI builds are green.
+	err = checkReleaseBuilds()
+	if err != nil {
+		return
 	}
 
 	// Start blocking os.Interrupt signal, the following actions are fast to
@@ -169,21 +190,6 @@ func shift(config *Config, next string) (err error) {
 			}
 		}
 	}()
-
-	// Make sure that develop and release are synchronized with their remote counterparts.
-	trunkRemote := remote + "/" + TrunkBranch
-	log.Printf("---> Checking whether %v and %v are synchronized\n", TrunkBranch, trunkRemote)
-	err = checkBranchesEqual(TrunkBranch, trunkRemote)
-	if err != nil {
-		return
-	}
-
-	releaseRemote := remote + "/" + ReleaseBranch
-	log.Printf("---> Checking whether %v and %v are synchronized\n", ReleaseBranch, releaseRemote)
-	err = checkBranchesEqual(ReleaseBranch, releaseRemote)
-	if err != nil {
-		return
-	}
 
 	// Rollback develop and release in case something goes wrong.
 	trunkHexsha, err := hexsha(TrunkBranch)
@@ -292,4 +298,65 @@ func fetch(remote string) error {
 		log.Print(string(output))
 		return err
 	}
+}
+
+func checkReleaseBuild(config *GlobalConfig) error {
+	// Make sure the Circle CI token is specified in the config.
+	if config.CircleCiToken == "" {
+		return newErrConfig("circleci_token")
+	}
+
+	// Get the GitHub owner and repository from the relevant remote URL.
+	var (
+		stdout bytes.Buffer
+		stderr bytes.Buffer
+	)
+	cmd := exec.Command("git", "config", "--get", "remote."+remote+"url")
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		log.Print(stderr.String())
+		return err
+	}
+
+	ru := string(bytes.TrimSpace(stdout.Bytes()))
+	ru = strings.Replace(ru, ":", "/", -1)
+	if strings.HasSuffix(ru, ".git") {
+		ru = ru[:len(ru)-4]
+	}
+	repoURL, err := url.Parse(ru)
+	if err != nil {
+		return err
+	}
+
+	parts := strings.Split(repoURL.Path, "/")
+	if len(parts) != 3 {
+		return fmt.Errorf("Invalid GitHub remote URL: %v", ru)
+	}
+	var (
+		owner      = parts[1]
+		repository = parts[2]
+	)
+
+	// Fetch the latest release build from Circle CI.
+	branch := localConfig.ReleaseBranch
+	project := circleci.NewClient(config.CircleCiToken).Project(owner, repository)
+	builds, err := project.Builds(&circleci.BuildOptions{
+		Branch: branch,
+		Limit:  1,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Check the build results.
+	if len(builds) != 1 {
+		return fmt.Errorf("No build found (owner=%v, repo=%v, branch=%v)",
+			owner, repository, branch)
+	}
+	if builds[0].Status != "success" {
+		return errors.New("The release build is a failing")
+	}
+	return nil
 }
