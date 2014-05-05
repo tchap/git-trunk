@@ -32,19 +32,20 @@ import (
 	"github.com/tchap/gocli"
 )
 
-var (
-	ErrDirtyRepository = errors.New("the repository is dirty")
-)
+const VersionPattern = "[0-9]+(.[0-9+]?)"
+
+var ErrDirtyRepository = errors.New("the repository is dirty")
 
 var Command = &gocli.Command{
 	UsageLine: `
-  shift [-remote=REMOTE] [-skip_milestone_check] [-skip_build_check] NEXT`,
-	Short: "perform the branch shifting operation",
+  shift [-remote=REMOTE] [-next=NEXT]
+        [-skip_milestone_check] [-skip_build_check]`,
+	Short: "perform the release shifting operation",
 	Long: `
   NEXT must be a version number in the form of x.y, or "auto", in which case
   the next release number is generated from the previous one by incrementing
   the minor number (i.e. the "y" part).
-	
+
   This subcommand performs the following actions, which can be divided into
   the current release finishing part and the next release initialization part:
 
@@ -55,7 +56,7 @@ var Command = &gocli.Command{
     4. Make sure that all the assigned GitHub issues are closed.
     5. Read the current release version string from package.json, then reset
        master to point to the current release. Format the version string and
-       commit it to master.
+       commit it into master.
     6. Tag master as the new production release.
     7. Close the relevant GitHub milestone.
 
@@ -73,6 +74,7 @@ var Command = &gocli.Command{
 
 var (
 	remote             string = "origin"
+	next               string = "auto"
 	skipMilestoneCheck bool
 	skipBuildCheck     bool
 )
@@ -80,6 +82,8 @@ var (
 func init() {
 	Command.Flags.StringVar(&remote, "remote", remote,
 		"Git remote to modify")
+	Command.Flags.StringVar(&next, "next", next,
+		"version number to use for the next release")
 	Command.Flags.BoolVar(&skipMilestoneCheck, "skip_milestone_check", skipMilestoneCheck,
 		"skip the GitHub milestone check before closing it")
 	Command.Flags.BoolVar(&skipBuildCheck, "skip_build_check", skipBuildCheck,
@@ -90,19 +94,13 @@ func run(cmd *gocli.Command, args []string) {
 	log.SetFlags(0)
 
 	// Parse the arguments.
-	if len(args) != 1 {
+	if len(args) != 0 {
 		cmd.Usage()
 		os.Exit(2)
 	}
 
-	config, err := ReadLocalConfig()
-	if err != nil {
-		log.Fatal("\nError: ", err)
-	}
-
-	next := args[0]
 	if next != "auto" {
-		matched, err := regexp.Match(config.VersionPattern, []byte(next))
+		matched, err := regexp.Match(VersionPattern, []byte(next))
 		if err != nil {
 			log.Fatal("\nError: ", err)
 		}
@@ -118,6 +116,12 @@ func run(cmd *gocli.Command, args []string) {
 }
 
 func shift(config *Config, next string) (err error) {
+	// Read the local configuration as saved in the repository.
+	config, err := ReadLocalConfig()
+	if err != nil {
+		return err
+	}
+
 	// Step 1: Make sure that the workspace and the index are clean.
 	log.Print("---> Checking the workspace and Git index")
 	if err := ensureCleanWorkspaceAndIndex(); err != nil {
