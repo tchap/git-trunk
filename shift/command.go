@@ -41,24 +41,32 @@ var Command = &gocli.Command{
   shift [-remote=REMOTE] [-skip_milestone_check] [-skip_build_check] NEXT`,
 	Short: "perform the branch shifting operation",
 	Long: `
-  This subcommand performs the following actions:
-
-    1. Make sure that the workspace and Git index are clean.
-    2. Make sure that develop and release are up to date.
-    3. Make sure that the release CI builds are green.
-    3. Close the current GitHub release milestone.
-       This operation will fail unless all the assigned issues are closed.
-    4. Tag the current release branch.
-    5. Reset master to point to the newly created release tag.
-    6. Reset release to point to develop.
-    7. If package.json is present in the repository, write the new version
-       into the file and commit it into the release branch.
-    8. Push the release tag and all the branches (develop, release, master).
-    9. Create a new GitHub milestone for the next release.
-
   NEXT must be a version number in the form of x.y, or "auto", in which case
   the next release number is generated from the previous one by incrementing
   the minor number (i.e. the "y" part).
+	
+  This subcommand performs the following actions, which can be divided into
+  the current release finishing part and the next release initialization part:
+
+  Finishing of the current release:
+    1. Make sure that the workspace and Git index are clean.
+    2. Make sure that develop and release are up to date.
+    3. Make sure that the release CI builds are green.
+    4. Make sure that all the assigned GitHub issues are closed.
+    5. Read the current release version string from package.json, then reset
+       master to point to the current release. Format the version string and
+       commit it to master.
+    6. Tag master as the new production release.
+    7. Close the relevant GitHub milestone.
+
+  Initialization of the next release:
+    1. In case the next version is specified manually, commit it into develop.
+    2. Reset release to point to develop.
+    3. Increment the minor version number and commit it into develop.
+    4. Create a new GitHub milestone for the next release.
+
+  Finalization:
+    1. Push the release tag and all the branches (develop, release, master).
 	`,
 	Action: run,
 }
@@ -111,38 +119,16 @@ func run(cmd *gocli.Command, args []string) {
 
 func shift(config *Config, next string) (err error) {
 	// Step 1: Make sure that the workspace and the index are clean.
-	log.Print("---> Performing the initial repository check")
-	output, err := exec.Command("git", "status", "--porcelain").Output()
-	if err != nil {
-		return
-	}
-	if len(output) != 0 {
-		return ErrDirtyRepository
+	log.Print("---> Checking the workspace and Git index")
+	if err := ensureCleanWorkspaceAndIndex(); err != nil {
+		return err
 	}
 
-	// Step 2: Reset develop and release to point to their remote counterparts.
+	// Step 2: Make sure that TrunkBranch and ReleaseBranch are up to date.
 	log.Printf("---> Fetching %v\n", remote)
-	output, err = exec.Command("git", "fetch", remote).CombinedOutput()
-	if err != nil {
-		log.Print(string(output))
-		return
+	if err := git.fetch(remote); err != nil {
+		return err
 	}
-
-	output, err = exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
-	if err != nil {
-		return
-	}
-	current := string(bytes.TrimSpace(output))
-	defer func() {
-		log.Printf("---> Checking out the original branch (%v)\n", current)
-		output, ex := exec.Command("git", "checkout", current).CombinedOutput()
-		if ex != nil {
-			log.Print(output)
-			if err == nil {
-				err = ex
-			}
-		}
-	}()
 
 	// Start blocking os.Interrupt signal, the following actions are fast to
 	// perform and there is no reason to try to interrupt them really.
@@ -159,6 +145,23 @@ func shift(config *Config, next string) (err error) {
 				log.Print("Signal received but ignored. Wait for the action to finish.")
 			case <-closeCh:
 				return
+			}
+		}
+	}()
+
+	// Make sure the same branch is checked out when we are done.
+	output, err = exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return
+	}
+	currentBranch := string(bytes.TrimSpace(output))
+	defer func() {
+		log.Printf("---> Checking out the original branch (%v)\n", currentBranch)
+		output, ex := exec.Command("git", "checkout", currentBranch).CombinedOutput()
+		if ex != nil {
+			log.Print(output)
+			if err == nil {
+				err = ex
 			}
 		}
 	}()
@@ -258,4 +261,31 @@ func checkBranchesEqual(b1, b2 string) error {
 		return fmt.Errorf("refs %v and %v differ", b1, b2)
 	}
 	return nil
+}
+
+func ensureCleanWorkspaceAndIndex() error {
+	var (
+		stdout bytes.Buffer
+		stderr bytes.Buffer
+	)
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		log.Print(stderr.String())
+		return err
+	}
+	if out := stdout.String(); len(out) != 0 {
+		log.Print(out)
+		return ErrDirtyRepository
+	}
+}
+
+func fetch(remote string) error {
+	output, err = exec.Command("git", "fetch", remote).CombinedOutput()
+	if err != nil {
+		log.Print(string(output))
+		return err
+	}
 }
