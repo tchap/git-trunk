@@ -27,12 +27,9 @@ import (
 	"os/signal"
 	"regexp"
 
-	"github.com/tchap/gocli"
-)
+	"github.com/tchap/trunk/common"
 
-const (
-	TrunkBranch   = "develop"
-	ReleaseBranch = "release"
+	"github.com/tchap/gocli"
 )
 
 var (
@@ -41,46 +38,44 @@ var (
 
 var Command = &gocli.Command{
 	UsageLine: `
-  shift [-remote=REMOTE] [-version_pattern=PATTERN]
-        [-skip_milestones] NEXT`,
+  shift [-remote=REMOTE] [-skip_milestone_check] [-skip_build_check] NEXT`,
 	Short: "perform the branch shifting operation",
 	Long: `
   This subcommand performs the following actions:
 
-    1. Make sure that the workspace and the index are clean.
-    2. Reset develop and release to point to their remote counterparts.
+    1. Make sure that the workspace and Git index are clean.
+    2. Make sure that develop and release are up to date.
+    3. Make sure that the release CI builds are green.
     3. Close the current GitHub release milestone.
        This operation will fail unless all the assigned issues are closed.
     4. Tag the current release branch.
-    5. Reset the master branch to point to the newly created release tag.
-    6. Reset the release branch to point to develop (trunk).
+    5. Reset master to point to the newly created release tag.
+    6. Reset release to point to develop.
     7. If package.json is present in the repository, write the new version
        into the file and commit it into the release branch.
     8. Push the release tag and all the branches (develop, release, master).
     9. Create a new GitHub milestone for the next release.
 
-  The milestones-handling steps are skipped when -skip_milestones is set.
-
-  NEXT must be a version number in the form of x.y.z, or "auto", in which case
+  NEXT must be a version number in the form of x.y, or "auto", in which case
   the next release number is generated from the previous one by incrementing
-  the release number (the "z" part).
+  the minor number (i.e. the "y" part).
 	`,
 	Action: run,
 }
 
 var (
-	remote         string = "origin"
-	versionPattern string = "^[0-9]+([.][0-9]+){2}$"
-	skipMilestones bool
+	remote             string = "origin"
+	skipMilestoneCheck bool
+	skipBuildCheck     bool
 )
 
 func init() {
 	Command.Flags.StringVar(&remote, "remote", remote,
 		"Git remote to modify")
-	Command.Flags.StringVar(&versionPattern, "version_pattern", versionPattern,
-		"version pattern")
-	Command.Flags.BoolVar(&skipMilestones, "skip_milestones", skipMilestones,
-		"skip the milestones steps")
+	Command.Flags.BoolVar(&skipMilestoneCheck, "skip_milestone_check", skipMilestoneCheck,
+		"skip the GitHub milestone check before closing it")
+	Command.Flags.BoolVar(&skipBuildCheck, "skip_build_check", skipBuildCheck,
+		"skip the Circle CI release build status check")
 }
 
 func run(cmd *gocli.Command, args []string) {
@@ -92,24 +87,29 @@ func run(cmd *gocli.Command, args []string) {
 		os.Exit(2)
 	}
 
+	config, err := ReadLocalConfig()
+	if err != nil {
+		log.Fatal("\nError: ", err)
+	}
+
 	next := args[0]
 	if next != "auto" {
-		matched, err := regexp.Match(versionPattern, []byte(next))
+		matched, err := regexp.Match(config.VersionPattern, []byte(next))
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("\nError: ", err)
 		}
 		if !matched {
-			log.Fatal("Invalid version string")
+			log.Fatal("\nError: Invalid version string")
 		}
 	}
 
 	// Perform the shifting.
-	if err := shift(args[0]); err != nil {
+	if err := shift(config, next); err != nil {
 		log.Fatal("\nError: ", err)
 	}
 }
 
-func shift(next string) (err error) {
+func shift(config *Config, next string) (err error) {
 	// Step 1: Make sure that the workspace and the index are clean.
 	log.Print("---> Performing the initial repository check")
 	output, err := exec.Command("git", "status", "--porcelain").Output()
