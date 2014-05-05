@@ -150,9 +150,33 @@ func shift(config *Config, next string) (err error) {
 	}
 
 	// Step 3: Make sure that the release CI builds are green.
-	err = checkReleaseBuilds()
+	var globalConfig *config.GlobalConfig
+	owner, repository, err := getGitHubOwnerAndRepository()
 	if err != nil {
 		return
+	}
+
+	if !skipBuildCheck && !config.DisableCircleCi {
+		log.Println("---> Checking the latest release build")
+		if globalConfig == nil {
+			globalConfig, err = config.ReadGlobalConfig()
+			if err != nil {
+				return
+			}
+		}
+		err = checkReleaseBuild(globalConfig, owner, repository)
+		if err != nil {
+			return
+		}
+	}
+
+	// Step 4: Make sure that all the assigned GitHub issues are closed.
+	if !skipMilestoneCheck && !config.DisableMilestones {
+		log.Println("---> Checking the release milestone")
+		err = checkMilestone(owner, repository)
+		if err != nil {
+			return
+		}
 	}
 
 	// Start blocking os.Interrupt signal, the following actions are fast to
@@ -300,44 +324,11 @@ func fetch(remote string) error {
 	}
 }
 
-func checkReleaseBuild(localConfig *LocalConfig, globalConfig *GlobalConfig) error {
+func checkReleaseBuild(globalConfig *config.GlobalConfig, owner, repository string) error {
 	// Make sure the Circle CI token is specified in the config.
 	if globalConfig.CircleCiToken == "" {
 		return newErrConfig("circleci_token")
 	}
-
-	// Get the GitHub owner and repository from the relevant remote URL.
-	var (
-		stdout bytes.Buffer
-		stderr bytes.Buffer
-	)
-	cmd := exec.Command("git", "config", "--get", "remote."+remote+"url")
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		log.Print(stderr.String())
-		return err
-	}
-
-	ru := string(bytes.TrimSpace(stdout.Bytes()))
-	ru = strings.Replace(ru, ":", "/", -1)
-	if strings.HasSuffix(ru, ".git") {
-		ru = ru[:len(ru)-4]
-	}
-	repoURL, err := url.Parse(ru)
-	if err != nil {
-		return err
-	}
-
-	parts := strings.Split(repoURL.Path, "/")
-	if len(parts) != 3 {
-		return fmt.Errorf("Invalid GitHub remote URL: %v", ru)
-	}
-	var (
-		owner      = parts[1]
-		repository = parts[2]
-	)
 
 	// Fetch the latest release build from Circle CI.
 	branch := localConfig.ReleaseBranch
@@ -359,4 +350,41 @@ func checkReleaseBuild(localConfig *LocalConfig, globalConfig *GlobalConfig) err
 		return errors.New("The release build is a failing")
 	}
 	return nil
+}
+
+func getGitHubOwnerAndRepository() (owner, repository string, err error) {
+	// Get the GitHub owner and repository from the relevant remote URL.
+	var (
+		stdout bytes.Buffer
+		stderr bytes.Buffer
+	)
+	cmd := exec.Command("git", "config", "--get", "remote."+remote+"url")
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+	if err != nil {
+		log.Print(stderr.String())
+		return
+	}
+
+	ru := string(bytes.TrimSpace(stdout.Bytes()))
+	ru = strings.Replace(ru, ":", "/", -1)
+	if strings.HasSuffix(ru, ".git") {
+		ru = ru[:len(ru)-4]
+	}
+	repoURL, err := url.Parse(ru)
+	if err != nil {
+		return
+	}
+
+	parts := strings.Split(repoURL.Path, "/")
+	if len(parts) != 3 {
+		err = fmt.Errorf("Invalid GitHub remote URL: %v", ru)
+		return
+	}
+
+	owner = parts[1]
+	repository = parts[2]
+	return
 }
