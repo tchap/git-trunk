@@ -115,68 +115,106 @@ func run(cmd *gocli.Command, args []string) {
 	}
 }
 
+type result struct {
+	stderr *bytes.Buffer
+	err    error
+}
+
 func shift(config *Config, next string) (err error) {
 	// Read the local configuration as saved in the repository.
-	config, err := ReadLocalConfig()
+	// This returns a struct filled with default values in case the config
+	// file is not found in the repository.
+	log.Println("[RUN]  Read the local project configuration")
+	localConfig, err := ReadLocalConfig()
 	if err != nil {
-		return err
+		return
 	}
-	var (
-		trunkBranch   = config.TrunkBranch
-		releaseBranch = config.ReleaseBranch
-		masterBranch  = config.ProductionBranch
-	)
+
+	// Read the global configuration, if necessary.
+	log.Println("[RUN]  Read the global configuration")
+	globalConfig, err := config.ReadGlobalConfig()
+	if err != nil {
+		return
+	}
+
+	// Parse the relevant Git remote to get the GitHub repository name and owner.
+	log.Println("[RUN]  Read the GitHub repository name and owner")
+	repoOwner, repoName, err := getGitHubOwnerAndRepository()
+	if err != nil {
+		return
+	}
 
 	// Step 1: Make sure that the workspace and Git index are clean.
-	log.Print("---> Checking the workspace and Git index")
+	log.Println("[RUN]  Check the workspace and Git index")
 	if err := git.EnsureCleanWorkingTree(); err != nil {
 		return err
 	}
 
 	// Step 2: Make sure that develop and release are up to date.
-	log.Printf("---> Fetching %v\n", remote)
-	if err := git.Fetch(remote); err != nil {
-		return err
+	messages := [...]string{
+		"Check whether the local and remote refs are synchronized",
+		"Check the latest release build",
+		"Check the relevant release milestone",
 	}
+	channels := make([]chan *result, 3)
 
-	log.Println("---> Checking whether the local and remote refs are synchronized")
-	err = git.EnsureBranchesEqual(trunkBranch, remote+"/"+trunkBranch)
-	if err != nil {
-		return
-	}
-	err = git.EnsureBranchesEqual(releaseBranch, remote+"/"+releaseBranch)
-	if err != nil {
-		return
-	}
-
-	// Step 3: Make sure that the release CI builds are green.
-	var globalConfig *config.GlobalConfig
-	owner, repository, err := getGitHubOwnerAndRepository()
-	if err != nil {
-		return
-	}
-
-	if !skipBuildCheck && !config.DisableCircleCi {
-		log.Println("---> Checking the latest release build")
-		if globalConfig == nil {
-			globalConfig, err = config.ReadGlobalConfig()
-			if err != nil {
-				return
-			}
-		}
-		err = checkReleaseBuild(globalConfig, owner, repository)
-		if err != nil {
+	log.Printf("[GO]   %v\n", messages[step2])
+	channels[step2] = make(chan *result, 1)
+	go func() {
+		if stderr, err := git.Fetch(remote); err != nil {
+			channels[step2] <- &result{stderr, err}
 			return
 		}
+
+		stderr, err := gitutil.EnsureBranchesEqual(
+			trunkBranch, remote+"/"+config.TrunkBranch)
+		if err != nil {
+			channels[step2] <- &result{stderr, err}
+			return
+		}
+		stderr, err = gitutil.EnsureBranchesEqual(
+			releaseBranch, remote+"/"+config.ReleaseBranch)
+		if err != nil {
+			channels[step2] <- &result{stderr, err}
+			return
+		}
+	}()
+
+	// Step 3: Make sure that the CI release build is green.
+	if !skipBuildCheck && !config.DisableCircleCi {
+		channels[step3] = make(chan *result, step3)
+		log.Printf("[GO]   %v\n", messages[step3])
+		go func() {
+			err := checkReleaseBuild(globalConfig.CircleCiToken, repoOwner, repoName)
+			channels[step3] <- &result{err: err}
+		}()
 	}
 
 	// Step 4: Make sure that all the assigned GitHub issues are closed.
 	if !skipMilestoneCheck && !config.DisableMilestones {
-		log.Println("---> Checking the release milestone")
-		err = checkMilestone(owner, repository)
-		if err != nil {
-			return
+		channels[step4] = make(chan *result, 1)
+		log.Printf("[GO]   %v\n", messages[step4])
+		err = checkMilestone(owner, repository, versions.ReleaseCurrent)
+		channels[step4] <- &result{err: err}
+	}
+
+	// Wait for the steps goroutines to return and print the results.
+	for i := 0; i < len(channels); i++ {
+		if ch := channels[i]; ch != nil {
+			result := <-ch
+			if result.err != nil {
+				log.Printf("[FAIL] %v\n", message[i])
+				if result.stderr != nil {
+					log.Print(result.stderr.String())
+				}
+				log.Println("\nError: ", result.err)
+				err = result.err
+			}
+			log.Printf("[OK]   %v\n", messages[i])
 		}
+	}
+	if err != nil {
+		return
 	}
 
 	// Start blocking os.Interrupt signal, the following actions are fast to

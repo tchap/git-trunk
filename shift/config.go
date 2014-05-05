@@ -28,7 +28,6 @@ type LocalConfig struct {
 	TrunkBranch       string `yaml:"trunk_branch"`
 	ReleaseBranch     string `yaml:"release_branch"`
 	ProductionBranch  string `yaml:"production_branch"`
-	VersionPattern    string `yaml:"version_pattern"`
 	DisableMilestones bool   `yaml:"disable_milestones"`
 	DisableCircleCI   bool   `yaml:"disable_circleci"`
 }
