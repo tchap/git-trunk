@@ -26,6 +26,22 @@ type Versions struct {
 	ProductionNext    string
 }
 
-func GenerateVersions(next string) (*Versions, error) {
+func ComputeVersions(next string) (vs *Versions, stderr *bytes.Buffer, err error) {
+	if next == "auto" {
+		stderr, err = git.Checkout(trunkBranch)
+		if err != nil {
+			return
+		}
+
+		next, err := readVersion()
+		if err != nil {
+			return
+		}
+
+	}
+	return computeNextVersions(next)
+}
+
+func computeVersions(next string) (versions *Versions, stderr *bytes.Buffer, err error) {
 
 }

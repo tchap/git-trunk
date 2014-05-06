@@ -21,8 +21,10 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
+	"strings"
 	//	"os/signal"
 	"regexp"
 
@@ -115,6 +117,7 @@ func run(cmd *gocli.Command, args []string) {
 }
 
 type result struct {
+	step   int
 	stderr *bytes.Buffer
 	err    error
 }
@@ -145,7 +148,8 @@ func shift(next string) (err error) {
 
 	// Step 1: Make sure that the workspace and Git index are clean.
 	log.Println("[RUN]  Check the workspace and Git index")
-	if err := git.EnsureCleanWorkingTree(); err != nil {
+	if stdout, _, err := git.EnsureCleanWorkingTree(); err != nil {
+		log.Print(stdout.String())
 		return err
 	}
 
@@ -171,13 +175,13 @@ func shift(next string) (err error) {
 		}
 
 		stderr, err := git.EnsureBranchesEqual(
-			trunkBranch, remote+"/"+config.TrunkBranch)
+			localConfig.TrunkBranch, remote+"/"+localConfig.TrunkBranch)
 		if err != nil {
 			results <- &result{step2, stderr, err}
 			return
 		}
 		stderr, err = git.EnsureBranchesEqual(
-			releaseBranch, remote+"/"+config.ReleaseBranch)
+			localConfig.ReleaseBranch, remote+"/"+localConfig.ReleaseBranch)
 		if err != nil {
 			results <- &result{step2, stderr, err}
 			return
@@ -185,10 +189,11 @@ func shift(next string) (err error) {
 	}()
 
 	// Step 3: Make sure that the CI release build is green.
-	if !skipBuildCheck && !config.DisableCircleCi {
+	if !skipBuildCheck && !localConfig.DisableCircleCi {
 		log.Printf("[GO]   %v\n", messages[step3])
 		go func() {
-			err := checkReleaseBuild(globalConfig.CircleCiToken, repoOwner, repoName)
+			err := checkReleaseBuild(repoOwner, repoName,
+				localConfig.ReleaseBranch, globalConfig.CircleCiToken)
 			results <- &result{step3, nil, err}
 		}()
 	} else {
@@ -197,10 +202,10 @@ func shift(next string) (err error) {
 	}
 
 	// Step 4: Make sure that all the assigned GitHub issues are closed.
-	if !skipMilestoneCheck && !config.DisableMilestones {
+	if !skipMilestoneCheck && !localConfig.DisableMilestones {
 		log.Printf("[GO]   %v\n", messages[step4])
 		go func() {
-			err = checkMilestone(owner, repository, versions.ReleaseCurrent)
+			err = checkMilestone(repoOwner, repoName, versions.ReleaseCurrent)
 			results <- &result{step4, nil, err}
 		}()
 	} else {
@@ -219,12 +224,12 @@ func shift(next string) (err error) {
 			continue
 		}
 
-		log.Printf("[FAIL] %v\n", message[i])
-		if result.stderr != nil {
-			log.Print(result.stderr.String())
+		log.Printf("[FAIL] %v\n", messages[i])
+		if res.stderr != nil {
+			log.Print(res.stderr.String())
 		}
-		log.Println("\nError: ", result.err)
-		err = result.err
+		log.Println("\nError: ", res.err)
+		err = res.err
 	}
 	if err != nil {
 		return
@@ -301,15 +306,14 @@ func shift(next string) (err error) {
 	return nil
 }
 
-func checkReleaseBuild(globalConfig *config.GlobalConfig, owner, repository string) error {
+func checkReleaseBuild(owner, repository, branch, circleCiToken string) error {
 	// Make sure the Circle CI token is specified in the config.
-	if globalConfig.CircleCiToken == "" {
-		return newErrConfig("circleci_token")
+	if circleCiToken == "" {
+		return newErrGlobalConfig("circleci_token")
 	}
 
 	// Fetch the latest release build from Circle CI.
-	branch := localConfig.ReleaseBranch
-	project := circleci.NewClient(config.CircleCiToken).Project(owner, repository)
+	project := circleci.NewClient(circleCiToken).Project(owner, repository)
 	builds, err := project.Builds(&circleci.BuildFilter{
 		Branch: branch,
 		Limit:  1,
@@ -323,8 +327,8 @@ func checkReleaseBuild(globalConfig *config.GlobalConfig, owner, repository stri
 		return fmt.Errorf("No build found (owner=%v, repo=%v, branch=%v)",
 			owner, repository, branch)
 	}
-	if builds[0].Status != "success" {
-		return errors.New("The release build is a failing")
+	if stat := builds[0].Status; stat != "success" {
+		return fmt.Errorf("The release build is not passing (status=%v)", stat)
 	}
 	return nil
 }

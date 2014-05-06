@@ -15,11 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with trunk.  If not, see <http://www.gnu.org/licenses/>.
 
-package common
+package config
 
 const (
-	ConfigFileName = ".trunkrc"
+	LocalConfigFileName  = ".trunkrc"
+	GlobalConfigFileName = ".trunkrc"
 
-	DefaultTrunkBranch   = "develop"
-	DefaultReleaseBranch = "release"
+	DefaultTrunkBranch      = "develop"
+	DefaultReleaseBranch    = "release"
+	DefaultProductionBranch = "master"
 )

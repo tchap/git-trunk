@@ -22,42 +22,46 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/user"
 	"path/filepath"
+
+	"github.com/tchap/trunk/git"
 
 	"gopkg.in/v1/yaml"
 )
 
-var Global *GlobalConfig
+var Local *LocalConfig
 
 func init() {
 	log.SetFlags(0)
-	log.Println("Reading the global configuration file...")
-	config, err := readGlobalConfig()
+	log.Println("Reading the local configuration file...")
+	config, err := readLocalConfig()
 	if err != nil {
 		log.Fatalf("Error: %n\n", err)
 	}
-	Global = config
+	Local = config
 }
 
-type GlobalConfig struct {
-	CircleCiToken string `yaml:"circleci_token"`
-	GitHubToken   string `yaml:"github_token"`
+type LocalConfig struct {
+	TrunkBranch       string `yaml:"trunk_branch"`
+	ReleaseBranch     string `yaml:"release_branch"`
+	ProductionBranch  string `yaml:"production_branch"`
+	DisableMilestones bool   `yaml:"disable_milestones"`
+	DisableCircleCi   bool   `yaml:"disable_circleci"`
 }
 
-func readGlobalConfig() (*GlobalConfig, error) {
-	// Generate the global config file path.
-	me, err := user.Current()
+func readLocalConfig() (*LocalConfig, error) {
+	// Generate the local config file path.
+	root, err := git.RepositoryRootAbsolutePath()
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(me.HomeDir, GlobalConfigFileName)
+	path := filepath.Join(root, LocalConfigFileName)
 
-	// Read the global config file.
+	// Read the config file.
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &GlobalConfig{}, nil
+			return nil, nil
 		}
 		return nil, err
 	}
@@ -69,11 +73,22 @@ func readGlobalConfig() (*GlobalConfig, error) {
 	}
 
 	// Parse the content.
-	var config GlobalConfig
+	var config LocalConfig
 	if err := yaml.Unmarshal(content.Bytes(), &config); err != nil {
 		return nil, err
 	}
 
-	// Return the config object.
+	// Fill in the defaults where necessary.
+	if config.TrunkBranch == "" {
+		config.TrunkBranch = DefaultTrunkBranch
+	}
+	if config.ReleaseBranch == "" {
+		config.ReleaseBranch = DefaultReleaseBranch
+	}
+	if config.ProductionBranch == "" {
+		config.ProductionBranch = DefaultProductionBranch
+	}
+
+	// Return the complete LocalConfig instance.
 	return &config, nil
 }
