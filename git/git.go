@@ -81,6 +81,16 @@ func EnsureCleanWorkingTree() (status *bytes.Buffer, stderr *bytes.Buffer, err e
 	return
 }
 
+func CurrentBranch() (branch string, stderr *bytes.Buffer, err error) {
+	stdout, stderr, err := Git("rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return
+	}
+
+	branch = string(bytes.TrimSpace(stdout.Bytes()))
+	return
+}
+
 func RepositoryRootAbsolutePath() (path string, stderr *bytes.Buffer, err error) {
 	stdout, stderr, err := Git("rev-parse", "--show-toplevel")
 	if err != nil {

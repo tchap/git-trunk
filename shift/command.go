@@ -28,8 +28,8 @@ import (
 	//	"os/signal"
 	"regexp"
 
-	//	"github.com/tchap/trunk/common"
 	"github.com/tchap/trunk/config"
+	_ "github.com/tchap/trunk/config/autoload"
 	"github.com/tchap/trunk/git"
 
 	"github.com/tchap/gocli"
@@ -123,22 +123,6 @@ type result struct {
 }
 
 func shift(next string) (err error) {
-	// Read the local configuration as saved in the repository.
-	// This returns a struct filled with default values in case the config
-	// file is not found in the repository.
-	log.Println("[RUN]  Read the local project configuration")
-	localConfig, err := ReadLocalConfig()
-	if err != nil {
-		return
-	}
-
-	// Read the global configuration, if necessary.
-	log.Println("[RUN]  Read the global configuration")
-	globalConfig, err := config.ReadGlobalConfig()
-	if err != nil {
-		return
-	}
-
 	// Parse the relevant Git remote to get the GitHub repository name and owner.
 	log.Println("[RUN]  Read the GitHub repository name and owner")
 	repoOwner, repoName, err := getGitHubOwnerAndRepository()
@@ -175,13 +159,13 @@ func shift(next string) (err error) {
 		}
 
 		stderr, err := git.EnsureBranchesEqual(
-			localConfig.TrunkBranch, remote+"/"+localConfig.TrunkBranch)
+			config.Local.TrunkBranch, remote+"/"+config.Local.TrunkBranch)
 		if err != nil {
 			results <- &result{step2, stderr, err}
 			return
 		}
 		stderr, err = git.EnsureBranchesEqual(
-			localConfig.ReleaseBranch, remote+"/"+localConfig.ReleaseBranch)
+			config.Local.ReleaseBranch, remote+"/"+config.Local.ReleaseBranch)
 		if err != nil {
 			results <- &result{step2, stderr, err}
 			return
@@ -189,11 +173,11 @@ func shift(next string) (err error) {
 	}()
 
 	// Step 3: Make sure that the CI release build is green.
-	if !skipBuildCheck && !localConfig.DisableCircleCi {
+	if !skipBuildCheck && !config.Local.DisableCircleCi {
 		log.Printf("[GO]   %v\n", messages[step3])
 		go func() {
 			err := checkReleaseBuild(repoOwner, repoName,
-				localConfig.ReleaseBranch, globalConfig.CircleCiToken)
+				config.Local.ReleaseBranch, config.Global.CircleCiToken)
 			results <- &result{step3, nil, err}
 		}()
 	} else {
@@ -202,7 +186,7 @@ func shift(next string) (err error) {
 	}
 
 	// Step 4: Make sure that all the assigned GitHub issues are closed.
-	if !skipMilestoneCheck && !localConfig.DisableMilestones {
+	if !skipMilestoneCheck && !config.Local.DisableMilestones {
 		log.Printf("[GO]   %v\n", messages[step4])
 		go func() {
 			err = checkMilestone(repoOwner, repoName, versions.ReleaseCurrent)
