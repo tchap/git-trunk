@@ -18,10 +18,15 @@
 package config
 
 import (
+	"bytes"
 	"io"
+	"os"
+	"os/user"
 	"path/filepath"
 
-	"gonuts.org/v1/yaml"
+	"github.com/tchap/trunk/common"
+
+	"gopkg.in/v1/yaml"
 )
 
 type GlobalConfig struct {
@@ -59,7 +64,7 @@ func ReadGlobalConfig() (*GlobalConfig, error) {
 
 	// Parse the content.
 	var config GlobalConfig
-	if err := yaml.Unmarshal(content, &config); err != nil {
+	if err := yaml.Unmarshal(content.Bytes(), &config); err != nil {
 		return nil, err
 	}
 

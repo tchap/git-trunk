@@ -19,22 +19,21 @@ package shift
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
-	"os/signal"
+	//	"os/signal"
 	"regexp"
 
-	"github.com/tchap/trunk/common"
+	//	"github.com/tchap/trunk/common"
+	"github.com/tchap/trunk/config"
+	"github.com/tchap/trunk/git"
 
 	"github.com/tchap/gocli"
 )
 
-const VersionPattern = "[0-9]+(.[0-9+]?)"
-
-var ErrDirtyRepository = errors.New("the repository is dirty")
+const VersionPattern = "[0-9]+(.[0-9+])?"
 
 var Command = &gocli.Command{
 	UsageLine: `
@@ -110,7 +109,7 @@ func run(cmd *gocli.Command, args []string) {
 	}
 
 	// Perform the shifting.
-	if err := shift(config, next); err != nil {
+	if err := shift(next); err != nil {
 		log.Fatal("\nError: ", err)
 	}
 }
@@ -120,7 +119,7 @@ type result struct {
 	err    error
 }
 
-func shift(config *Config, next string) (err error) {
+func shift(next string) (err error) {
 	// Read the local configuration as saved in the repository.
 	// This returns a struct filled with default values in case the config
 	// file is not found in the repository.
@@ -150,216 +149,156 @@ func shift(config *Config, next string) (err error) {
 		return err
 	}
 
-	// Step 2: Make sure that develop and release are up to date.
+	// Prepare for running the following steps concurrently.
+	const (
+		step2 = iota
+		step3
+		step4
+	)
 	messages := [...]string{
 		"Check whether the local and remote refs are synchronized",
 		"Check the latest release build",
 		"Check the relevant release milestone",
 	}
-	channels := make([]chan *result, 3)
+	results := make(chan *result, 3)
 
+	// Step 2: Make sure that develop and release are up to date.
 	log.Printf("[GO]   %v\n", messages[step2])
-	channels[step2] = make(chan *result, 1)
 	go func() {
 		if stderr, err := git.Fetch(remote); err != nil {
-			channels[step2] <- &result{stderr, err}
+			results <- &result{step2, stderr, err}
 			return
 		}
 
-		stderr, err := gitutil.EnsureBranchesEqual(
+		stderr, err := git.EnsureBranchesEqual(
 			trunkBranch, remote+"/"+config.TrunkBranch)
 		if err != nil {
-			channels[step2] <- &result{stderr, err}
+			results <- &result{step2, stderr, err}
 			return
 		}
-		stderr, err = gitutil.EnsureBranchesEqual(
+		stderr, err = git.EnsureBranchesEqual(
 			releaseBranch, remote+"/"+config.ReleaseBranch)
 		if err != nil {
-			channels[step2] <- &result{stderr, err}
+			results <- &result{step2, stderr, err}
 			return
 		}
 	}()
 
 	// Step 3: Make sure that the CI release build is green.
 	if !skipBuildCheck && !config.DisableCircleCi {
-		channels[step3] = make(chan *result, step3)
 		log.Printf("[GO]   %v\n", messages[step3])
 		go func() {
 			err := checkReleaseBuild(globalConfig.CircleCiToken, repoOwner, repoName)
-			channels[step3] <- &result{err: err}
+			results <- &result{step3, nil, err}
 		}()
+	} else {
+		log.Printf("[SKIP] %v\n", messages[step3])
+		results <- nil
 	}
 
 	// Step 4: Make sure that all the assigned GitHub issues are closed.
 	if !skipMilestoneCheck && !config.DisableMilestones {
-		channels[step4] = make(chan *result, 1)
 		log.Printf("[GO]   %v\n", messages[step4])
-		err = checkMilestone(owner, repository, versions.ReleaseCurrent)
-		channels[step4] <- &result{err: err}
+		go func() {
+			err = checkMilestone(owner, repository, versions.ReleaseCurrent)
+			results <- &result{step4, nil, err}
+		}()
+	} else {
+		log.Printf("[SKIP] %v\n", messages[step4])
+		results <- nil
 	}
 
 	// Wait for the steps goroutines to return and print the results.
-	for i := 0; i < len(channels); i++ {
-		if ch := channels[i]; ch != nil {
-			result := <-ch
-			if result.err != nil {
-				log.Printf("[FAIL] %v\n", message[i])
-				if result.stderr != nil {
-					log.Print(result.stderr.String())
-				}
-				log.Println("\nError: ", result.err)
-				err = result.err
-			}
+	for i := 0; i < cap(results); i++ {
+		res := <-results
+		if res == nil {
+			continue
+		}
+		if res.err == nil {
 			log.Printf("[OK]   %v\n", messages[i])
+			continue
 		}
+
+		log.Printf("[FAIL] %v\n", message[i])
+		if result.stderr != nil {
+			log.Print(result.stderr.String())
+		}
+		log.Println("\nError: ", result.err)
+		err = result.err
 	}
 	if err != nil {
 		return
 	}
 
-	// Start blocking os.Interrupt signal, the following actions are fast to
-	// perform and there is no reason to try to interrupt them really.
-	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, os.Interrupt)
-	closeCh := make(chan struct{})
-	defer func() {
-		close(closeCh)
-	}()
-	go func() {
-		for {
-			select {
-			case <-signalCh:
-				log.Print("Signal received but ignored. Wait for the action to finish.")
-			case <-closeCh:
-				return
+	/*
+		// Start blocking os.Interrupt signal, the following actions are fast to
+		// perform and there is no reason to try to interrupt them really.
+		signalCh := make(chan os.Signal, 1)
+		signal.Notify(signalCh, os.Interrupt)
+		closeCh := make(chan struct{})
+		defer func() {
+			close(closeCh)
+		}()
+		go func() {
+			for {
+				select {
+				case <-signalCh:
+					log.Print("Signal received but ignored. Wait for the action to finish.")
+				case <-closeCh:
+					return
+				}
 			}
-		}
-	}()
+		}()
 
-	// Make sure the same branch is checked out when we are done.
-	output, err = exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
-	if err != nil {
-		return
-	}
-	currentBranch := string(bytes.TrimSpace(output))
-	defer func() {
-		log.Printf("---> Checking out the original branch (%v)\n", currentBranch)
-		output, ex := exec.Command("git", "checkout", currentBranch).CombinedOutput()
-		if ex != nil {
-			log.Print(output)
-			if err == nil {
-				err = ex
+		// Make sure the same branch is checked out when we are done.
+		output, err = exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+		if err != nil {
+			return
+		}
+		currentBranch := string(bytes.TrimSpace(output))
+		defer func() {
+			log.Printf("---> Checking out the original branch (%v)\n", currentBranch)
+			output, ex := exec.Command("git", "checkout", currentBranch).CombinedOutput()
+			if ex != nil {
+				log.Print(output)
+				if err == nil {
+					err = ex
+				}
 			}
-		}
-	}()
+		}()
 
-	// Rollback develop and release in case something goes wrong.
-	trunkHexsha, err := hexsha(TrunkBranch)
-	if err != nil {
-		return
-	}
-	defer func() {
+		// Rollback develop and release in case something goes wrong.
+		trunkHexsha, err := hexsha(TrunkBranch)
 		if err != nil {
-			reset(TrunkBranch, trunkHexsha)
+			return
 		}
-	}()
+		defer func() {
+			if err != nil {
+				reset(TrunkBranch, trunkHexsha)
+			}
+		}()
 
-	releaseHexsha, err := hexsha(ReleaseBranch)
-	if err != nil {
-		return
-	}
-	defer func() {
+		releaseHexsha, err := hexsha(ReleaseBranch)
 		if err != nil {
-			reset(ReleaseBranch, releaseHexsha)
+			return
 		}
-	}()
+		defer func() {
+			if err != nil {
+				reset(ReleaseBranch, releaseHexsha)
+			}
+		}()
 
-	//    3. Close the current GitHub release milestone.
-	//       This operation will fail unless all the assigned issues are closed.
-	//    4. Tag the current release branch.
-	//    5. Reset the master branch to point to the newly created release tag.
-	//    6. Reset the release branch to point to develop (trunk).
-	//    7. If package.json is present in the repository, write the new version
-	//       into the file and commit it into the release branch.
-	//    8. Push the release tag and all the branches (develop, release, master).
-	//    9. Create a new GitHub milestone for the next release.
-
+		//    3. Close the current GitHub release milestone.
+		//       This operation will fail unless all the assigned issues are closed.
+		//    4. Tag the current release branch.
+		//    5. Reset the master branch to point to the newly created release tag.
+		//    6. Reset the release branch to point to develop (trunk).
+		//    7. If package.json is present in the repository, write the new version
+		//       into the file and commit it into the release branch.
+		//    8. Push the release tag and all the branches (develop, release, master).
+		//    9. Create a new GitHub milestone for the next release.
+	*/
 	return nil
-}
-
-func reset(branch, hexsha string) {
-	log.Printf("---> Resetting %v to the original position\n", branch)
-
-	output, err := exec.Command("git", "checkout", branch).CombinedOutput()
-	if err != nil {
-		log.Print(string(output))
-		return
-	}
-
-	output, err = exec.Command("git", "reset", "--hard", hexsha).CombinedOutput()
-	if err != nil {
-		log.Print(string(output))
-		return
-	}
-}
-
-func hexsha(ref string) (string, error) {
-	var (
-		stdout bytes.Buffer
-		stderr bytes.Buffer
-	)
-	cmd := exec.Command("git", "rev-parse", ref)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		log.Print(stderr.String())
-		return "", err
-	}
-	return string(bytes.TrimSpace(stdout.Bytes())), nil
-}
-
-func checkBranchesEqual(b1, b2 string) error {
-	hexsha1, err := hexsha(b1)
-	if err != nil {
-		return err
-	}
-	hexsha2, err := hexsha(b2)
-	if err != nil {
-		return err
-	}
-
-	if hexsha1 != hexsha2 {
-		return fmt.Errorf("refs %v and %v differ", b1, b2)
-	}
-	return nil
-}
-
-func ensureCleanWorkspaceAndIndex() error {
-	var (
-		stdout bytes.Buffer
-		stderr bytes.Buffer
-	)
-	cmd := exec.Command("git", "status", "--porcelain")
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		log.Print(stderr.String())
-		return err
-	}
-	if out := stdout.String(); len(out) != 0 {
-		log.Print(out)
-		return ErrDirtyRepository
-	}
-}
-
-func fetch(remote string) error {
-	output, err = exec.Command("git", "fetch", remote).CombinedOutput()
-	if err != nil {
-		log.Print(string(output))
-		return err
-	}
 }
 
 func checkReleaseBuild(globalConfig *config.GlobalConfig, owner, repository string) error {

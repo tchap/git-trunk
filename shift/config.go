@@ -21,7 +21,7 @@ import (
 	"io"
 	"path/filepath"
 
-	"gonuts.org/v1/yaml"
+	"gopkg.in/v1/yaml"
 )
 
 type LocalConfig struct {
