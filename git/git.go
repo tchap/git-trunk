@@ -26,23 +26,28 @@ import (
 
 var ErrDirtyRepository = errors.New("the repository is dirty")
 
-func Reset(branch, hexsha string) (stderr *bytes.Buffer, err error) {
-	stderr, err = execCommand("git", "checkout", branch)
+func Fetch(remote string) (stderr *bytes.Buffer, err error) {
+	_, stderr, err = execCommand("git", "fetch", remote)
+	return
+}
+
+func Checkout(branch string) (stderr *bytes.Buffer, err error) {
+	_, stderr, err = execCommand("git", "checkout", branch)
+	return
+}
+
+func Reset(branch, ref string) (stderr *bytes.Buffer, err error) {
+	stderr, err = Checkout(branch)
 	if err != nil {
 		return
 	}
 
-	return execCommand("git", "reset", "--hard", hexsha)
+	_, stderr, err = execCommand("git", "reset", "--hard", ref)
+	return
 }
 
 func Hexsha(ref string) (hexsha string, stderr *bytes.Buffer, err error) {
-	var stdout bytes.Buffer
-	stderr = new(bytes.Buffer)
-	cmd := exec.Command("git", "rev-parse", ref)
-	cmd.Stdout = &stdout
-	cmd.Stderr = stderr
-
-	err = cmd.Run()
+	stdout, stderr, err := execCommand("git", "rev-parse", ref)
 	if err != nil {
 		return
 	}
@@ -67,29 +72,29 @@ func EnsureBranchesEqual(b1, b2 string) (stderr *bytes.Buffer, err error) {
 	return
 }
 
-func EnsureCleanWorkspaceAndIndex() (status *bytes.Buffer, stderr *bytes.Buffer, err error) {
-	status = new(bytes.Buffer)
-	stderr = new(bytes.Buffer)
-	cmd := exec.Command("git", "status", "--porcelain")
-	cmd.Stdout = status
-	cmd.Stderr = stderr
-	err = cmd.Run()
-	if err != nil {
-		return
-	}
+func EnsureCleanWorkingTree() (status *bytes.Buffer, stderr *bytes.Buffer, err error) {
+	status, stderr, err = execCommand("git", "status", "--porcelain")
 	if status.Len() != 0 {
 		err = ErrDirtyRepository
 	}
 	return
 }
 
-func Fetch(remote string) (stderr *bytes.Buffer, err error) {
-	return execCommand("git", "fetch", remote)
+func RepositoryRootAbsolutePath() (path string, stderr *bytes.Buffer, err error) {
+	stdout, stderr, err := execCommand("git", "rev-parse", "--show-toplevel")
+	if err != nil {
+		return
+	}
+
+	path = string(bytes.TrimSpace(stdout.Bytes()))
+	return
 }
 
-func execCommand(name string, args ...string) (stderr *bytes.Buffer, err error) {
+func execCommand(name string, args ...string) (stdout, stderr *bytes.Buffer, err error) {
+	stdout = new(bytes.Buffer)
 	stderr = new(bytes.Buffer)
 	cmd := exec.Command(name, args...)
+	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	err = cmd.Run()
 	return

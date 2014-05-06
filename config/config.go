@@ -15,59 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with trunk.  If not, see <http://www.gnu.org/licenses/>.
 
-package config
+package common
 
-import (
-	"bytes"
-	"io"
-	"os"
-	"os/user"
-	"path/filepath"
+const (
+	ConfigFileName = ".trunkrc"
 
-	"github.com/tchap/trunk/common"
-
-	"gopkg.in/v1/yaml"
+	DefaultTrunkBranch   = "develop"
+	DefaultReleaseBranch = "release"
 )
-
-type GlobalConfig struct {
-	CircleCiToken string `yaml:"circleci_token"`
-	GitHubToken   string `yaml:"github_token"`
-}
-
-// ReadGlobalConfig reads the global configuration file that is expected to be
-// placed into the current user's home directory.
-//
-// When the global config file does not exist, a GlobalConfig instance is returned
-// anyway, it just contains the default values where it makes sense.
-func ReadGlobalConfig() (*GlobalConfig, error) {
-	// Generate the global config file path.
-	me, err := user.Current()
-	if err != nil {
-		return nil, err
-	}
-	path := filepath.Join(me.HomeDir, common.ConfigFileName)
-
-	// Read the global config file.
-	file, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer file.Close()
-
-	var content bytes.Buffer
-	if _, err := io.Copy(&content, file); err != nil {
-		return nil, err
-	}
-
-	// Parse the content.
-	var config GlobalConfig
-	if err := yaml.Unmarshal(content.Bytes(), &config); err != nil {
-		return nil, err
-	}
-
-	// Return the config object.
-	return &config, nil
-}
