@@ -27,12 +27,12 @@ import (
 var ErrDirtyRepository = errors.New("the repository is dirty")
 
 func Fetch(remote string) (stderr *bytes.Buffer, err error) {
-	_, stderr, err = execCommand("git", "fetch", remote)
+	_, stderr, err = Git("fetch", remote)
 	return
 }
 
 func Checkout(branch string) (stderr *bytes.Buffer, err error) {
-	_, stderr, err = execCommand("git", "checkout", branch)
+	_, stderr, err = Git("checkout", branch)
 	return
 }
 
@@ -42,12 +42,12 @@ func Reset(branch, ref string) (stderr *bytes.Buffer, err error) {
 		return
 	}
 
-	_, stderr, err = execCommand("git", "reset", "--hard", ref)
+	_, stderr, err = Git("reset", "--hard", ref)
 	return
 }
 
 func Hexsha(ref string) (hexsha string, stderr *bytes.Buffer, err error) {
-	stdout, stderr, err := execCommand("git", "rev-parse", ref)
+	stdout, stderr, err := Git("rev-parse", ref)
 	if err != nil {
 		return
 	}
@@ -73,7 +73,7 @@ func EnsureBranchesEqual(b1, b2 string) (stderr *bytes.Buffer, err error) {
 }
 
 func EnsureCleanWorkingTree() (status *bytes.Buffer, stderr *bytes.Buffer, err error) {
-	status, stderr, err = execCommand("git", "status", "--porcelain")
+	status, stderr, err = Git("status", "--porcelain")
 	if status.Len() != 0 {
 		err = ErrDirtyRepository
 	}
@@ -81,7 +81,7 @@ func EnsureCleanWorkingTree() (status *bytes.Buffer, stderr *bytes.Buffer, err e
 }
 
 func RepositoryRootAbsolutePath() (path string, stderr *bytes.Buffer, err error) {
-	stdout, stderr, err := execCommand("git", "rev-parse", "--show-toplevel")
+	stdout, stderr, err := Git("rev-parse", "--show-toplevel")
 	if err != nil {
 		return
 	}
@@ -90,10 +90,10 @@ func RepositoryRootAbsolutePath() (path string, stderr *bytes.Buffer, err error)
 	return
 }
 
-func execCommand(name string, args ...string) (stdout, stderr *bytes.Buffer, err error) {
+func Git(args ...string) (stdout, stderr *bytes.Buffer, err error) {
 	stdout = new(bytes.Buffer)
 	stderr = new(bytes.Buffer)
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command("git", args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	err = cmd.Run()
