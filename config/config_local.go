@@ -31,6 +31,14 @@ import (
 
 var Local *LocalConfig
 
+type LocalConfig struct {
+	TrunkBranch       string `yaml:"trunk_branch"`
+	ReleaseBranch     string `yaml:"release_branch"`
+	ProductionBranch  string `yaml:"production_branch"`
+	DisableMilestones bool   `yaml:"disable_milestones"`
+	DisableCircleCi   bool   `yaml:"disable_circleci"`
+}
+
 func init() {
 	log.SetFlags(0)
 	log.Println("Reading the local configuration file...")
@@ -39,14 +47,6 @@ func init() {
 		log.Fatalf("Error: %n\n", err)
 	}
 	Local = config
-}
-
-type LocalConfig struct {
-	TrunkBranch       string `yaml:"trunk_branch"`
-	ReleaseBranch     string `yaml:"release_branch"`
-	ProductionBranch  string `yaml:"production_branch"`
-	DisableMilestones bool   `yaml:"disable_milestones"`
-	DisableCircleCi   bool   `yaml:"disable_circleci"`
 }
 
 func readLocalConfig() (*LocalConfig, error) {
