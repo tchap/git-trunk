@@ -19,8 +19,11 @@ package shift
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"path/filepath"
 	"regexp"
 
 	"github.com/tchap/trunk/config"
@@ -77,9 +80,32 @@ func ComputeVersions(next string) (vs *Versions, stderr *bytes.Buffer, err error
 				config.Local.TrunkBranch, next)
 		}
 	}
-	return computeNextVersions(next)
+	return computeVersions(next)
 }
 
 func computeVersions(next string) (versions *Versions, stderr *bytes.Buffer, err error) {
 
+}
+
+func readVersion() (version string, err error) {
+	root, _, err := git.RepositoryRootAbsolutePath()
+	if err != nil {
+		return
+	}
+	path := filepath.Join(root, "package.json")
+
+	content, err := ioutil.ReadFile(path)
+	if err != nil {
+		return
+	}
+
+	var packageJson struct {
+		Version string
+	}
+	err = json.Unmarshal(content, &packageJson)
+	if err != nil {
+		return
+	}
+
+	return packageJson.Version, nil
 }
