@@ -26,8 +26,9 @@ import (
 
 var ErrDirtyRepository = errors.New("the repository is dirty")
 
-func Fetch(remote string) (stderr *bytes.Buffer, err error) {
-	_, stderr, err = Git("fetch", remote)
+func Fetch(remotes ...string) (stderr *bytes.Buffer, err error) {
+	args := append([]string{"fetch"}, remotes...)
+	_, stderr, err = Git(args...)
 	return
 }
 
