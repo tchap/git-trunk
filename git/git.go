@@ -37,7 +37,7 @@ func Checkout(branch string) (stderr *bytes.Buffer, err error) {
 	return
 }
 
-func Reset(branch, ref string) (stderr *bytes.Buffer, err error) {
+func ResetHard(branch, ref string) (stderr *bytes.Buffer, err error) {
 	stderr, err = Checkout(branch)
 	if err != nil {
 		return
