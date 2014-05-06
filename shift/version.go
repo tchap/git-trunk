@@ -50,12 +50,14 @@ func ComputeVersions(next string) (vs *Versions, stderr *bytes.Buffer, err error
 			errStream, ex := git.Checkout(current)
 			if ex != nil {
 				if err == nil {
-					stderr = errStream
 					err = ex
-					return
 				}
-				if _, err := io.Copy(stderr, errStream); err != nil {
-					panic(err)
+				if stderr == nil {
+					stderr = errStream
+				} else {
+					if _, err := io.Copy(stderr, errStream); err != nil {
+						panic(err)
+					}
 				}
 			}
 		}()
