@@ -20,7 +20,6 @@ package config
 import (
 	"bytes"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -39,19 +38,9 @@ type LocalConfig struct {
 	DisableCircleCi   bool   `yaml:"disable_circleci"`
 }
 
-func init() {
-	log.SetFlags(0)
-	log.Println("Reading the local configuration file...")
-	config, err := readLocalConfig()
-	if err != nil {
-		log.Fatalf("Error: %n\n", err)
-	}
-	Local = config
-}
-
-func readLocalConfig() (*LocalConfig, error) {
+func ReadLocalConfig() (*LocalConfig, error) {
 	// Generate the local config file path.
-	root, err := git.RepositoryRootAbsolutePath()
+	root, _, err := git.RepositoryRootAbsolutePath()
 	if err != nil {
 		return nil, err
 	}

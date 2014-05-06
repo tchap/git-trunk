@@ -20,7 +20,6 @@ package config
 import (
 	"bytes"
 	"io"
-	"log"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -35,17 +34,7 @@ type GlobalConfig struct {
 	GitHubToken   string `yaml:"github_token"`
 }
 
-func init() {
-	log.SetFlags(0)
-	log.Println("Reading the global configuration file...")
-	config, err := readGlobalConfig()
-	if err != nil {
-		log.Fatalf("Error: %n\n", err)
-	}
-	Global = config
-}
-
-func readGlobalConfig() (*GlobalConfig, error) {
+func ReadGlobalConfig() (*GlobalConfig, error) {
 	// Generate the global config file path.
 	me, err := user.Current()
 	if err != nil {
