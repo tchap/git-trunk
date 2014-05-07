@@ -145,34 +145,8 @@ func shift(next string) (err error) {
 	step2 := &result{msg: "Check whether the local and remote refs are synchronized"}
 	log.Go(step2.msg)
 	go func() {
-		stderr, err := git.Fetch(remote)
-		if err != nil {
-			goto Exit
-		}
-
-		stderr, err = git.EnsureBranchesEqual(
-			config.Local.TrunkBranch, remote+"/"+config.Local.TrunkBranch)
-		if err != nil {
-			goto Exit
-		}
-
-		stderr, err = git.EnsureBranchesEqual(
-			config.Local.ReleaseBranch, remote+"/"+config.Local.ReleaseBranch)
-		if err != nil {
-			goto Exit
-		}
-
-		stderr, err = git.EnsureBranchesEqual(
-			config.Local.ProductionBranch, remote+"/"+config.Local.ProductionBranch)
-		if err != nil {
-			goto Exit
-		}
-
-	Exit:
-		step2.stderr = stderr
-		step2.err = err
+		step2.stderr, step2.err = checkBranchesInSync()
 		results <- step2
-		return
 	}()
 
 	// Step 3: Make sure that the CI release build is green.
@@ -291,6 +265,26 @@ func shift(next string) (err error) {
 		//    9. Create a new GitHub milestone for the next release.
 	*/
 	return nil
+}
+
+func checkBranchesInSync() (stderr *bytes.Buffer, err error) {
+	stderr, err = git.Fetch(remote)
+	if err != nil {
+		return
+	}
+
+	bs := [...]string{
+		config.Local.TrunkBranch,
+		config.Local.ReleaseBranch,
+		config.Local.ProductionBranch,
+	}
+	for _, b := range bs {
+		stderr, err = git.EnsureBranchesEqual(b, remote+"/"+b)
+		if err != nil {
+			return
+		}
+	}
+	return
 }
 
 func checkReleaseBuild(owner, repository, branch, token string) error {
