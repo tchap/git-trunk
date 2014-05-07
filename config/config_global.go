@@ -19,6 +19,7 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/user"
@@ -65,4 +66,8 @@ func ReadGlobalConfig() (*GlobalConfig, error) {
 
 	// Return the config object.
 	return &config, nil
+}
+
+func NewGlobalConfigError(msg string) error {
+	return fmt.Errorf("global config: %v", msg)
 }

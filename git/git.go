@@ -47,6 +47,10 @@ func ResetHard(branch, ref string) (stderr *bytes.Buffer, err error) {
 	return
 }
 
+func ShowByBranch(branch, file string) (content, stderr *bytes.Buffer, err error) {
+	return Git("show", branch+":"+file)
+}
+
 func Hexsha(ref string) (hexsha string, stderr *bytes.Buffer, err error) {
 	stdout, stderr, err := Git("rev-parse", ref)
 	if err != nil {

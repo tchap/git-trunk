@@ -63,7 +63,7 @@ var Command = &gocli.Command{
 
   Initialization of the next release:
     1. In case the next version is specified manually, commit it into develop.
-    2. Reset release to point to develop.
+    2. Reset release to point to develop and commit the new version string.
     3. Increment the minor version number and commit it into develop.
     4. Create a new GitHub milestone for the next release.
 
@@ -117,100 +117,95 @@ func run(cmd *gocli.Command, args []string) {
 }
 
 type result struct {
-	step   int
+	msg    string
 	stderr *bytes.Buffer
 	err    error
 }
 
 func shift(next string) (err error) {
 	// Parse the relevant Git remote to get the GitHub repository name and owner.
-	log.Println("[RUN]  Read the GitHub repository name and owner")
+	logRun("Read the GitHub repository name and owner")
 	repoOwner, repoName, err := getGitHubOwnerAndRepository()
 	if err != nil {
 		return
 	}
 
 	// Step 1: Make sure that the workspace and Git index are clean.
-	log.Println("[RUN]  Check the workspace and Git index")
+	logRun("Check the workspace and Git index")
 	if stdout, _, err := git.EnsureCleanWorkingTree(); err != nil {
 		log.Print(stdout.String())
 		return err
 	}
 
 	// Prepare for running the following steps concurrently.
-	const (
-		step2 = iota
-		step3
-		step4
-	)
-	messages := [...]string{
-		"Check whether the local and remote refs are synchronized",
-		"Check the latest release build",
-		"Check the relevant release milestone",
-	}
 	results := make(chan *result, 3)
 
 	// Step 2: Make sure that develop and release are up to date.
-	log.Printf("[GO]   %v\n", messages[step2])
+	step2 := &result{msg: "Check whether the local and remote refs are synchronized"}
+	logGo(step2.msg)
 	go func() {
-		if stderr, err := git.Fetch(remote); err != nil {
-			results <- &result{step2, stderr, err}
-			return
+		stderr, err := git.Fetch(remote)
+		if err != nil {
+			goto Exit
 		}
 
-		stderr, err := git.EnsureBranchesEqual(
+		stderr, err = git.EnsureBranchesEqual(
 			config.Local.TrunkBranch, remote+"/"+config.Local.TrunkBranch)
 		if err != nil {
-			results <- &result{step2, stderr, err}
-			return
+			goto Exit
 		}
+
 		stderr, err = git.EnsureBranchesEqual(
 			config.Local.ReleaseBranch, remote+"/"+config.Local.ReleaseBranch)
 		if err != nil {
-			results <- &result{step2, stderr, err}
-			return
+			goto Exit
 		}
+
+	Exit:
+		step2.stderr = stderr
+		step2.err = err
+		results <- step2
+		return
 	}()
 
 	// Step 3: Make sure that the CI release build is green.
+	step3 := &result{msg: "Check the latest release build"}
 	if !skipBuildCheck && !config.Local.DisableCircleCi {
-		log.Printf("[GO]   %v\n", messages[step3])
+		logGo(step3.msg)
 		go func() {
-			err := checkReleaseBuild(repoOwner, repoName,
+			step3.err = checkReleaseBuild(repoOwner, repoName,
 				config.Local.ReleaseBranch, config.Global.CircleCiToken)
-			results <- &result{step3, nil, err}
+			results <- step3
 		}()
 	} else {
-		log.Printf("[SKIP] %v\n", messages[step3])
-		results <- nil
+		logSkip(step3.msg)
+		results <- step3
 	}
 
 	// Step 4: Make sure that all the assigned GitHub issues are closed.
+	step4 := &result{msg: "Check the relevant release milestone"}
 	if !skipMilestoneCheck && !config.Local.DisableMilestones {
-		log.Printf("[GO]   %v\n", messages[step4])
+		logGo(step4.msg)
 		go func() {
-			err = checkMilestone(repoOwner, repoName, versions.ReleaseCurrent)
-			results <- &result{step4, nil, err}
+			step4.err = checkMilestone(repoOwner, repoName, versions.ReleaseCurrent)
+			results <- step4
 		}()
 	} else {
-		log.Printf("[SKIP] %v\n", messages[step4])
-		results <- nil
+		logSkip(step4.msg)
+		results <- step4
 	}
 
 	// Wait for the steps goroutines to return and print the results.
 	for i := 0; i < cap(results); i++ {
 		res := <-results
-		if res == nil {
-			continue
-		}
 		if res.err == nil {
-			log.Printf("[OK]   %v\n", messages[i])
+			logOk(res.msg)
 			continue
 		}
 
-		log.Printf("[FAIL] %v\n", messages[i])
-		if res.stderr != nil {
-			log.Print(res.stderr.String())
+		logFail(res.msg)
+		if stderr := res.stderr; stderr != nil && stderr.Len() != 0 {
+			log.Print(stderr.String())
 		}
 		log.Println("\nError: ", res.err)
 		err = res.err
@@ -293,7 +288,7 @@ func shift(next string) (err error) {
 func checkReleaseBuild(owner, repository, branch, circleCiToken string) error {
 	// Make sure the Circle CI token is specified in the config.
 	if circleCiToken == "" {
-		return newErrGlobalConfig("circleci_token")
+		return config.NewGlobalConfigError("circleci_token is not set")
 	}
 
 	// Fetch the latest release build from Circle CI.
@@ -352,4 +347,24 @@ func getGitHubOwnerAndRepository() (owner, repository string, err error) {
 	owner = parts[1]
 	repository = parts[2]
 	return
+}
+
+func logRun(msg string) {
+	log.Printf("[RUN]  %v\n", msg)
+}
+
+func logSkip(msg string) {
+	log.Printf("[SKIP] %v\n", msg)
+}
+
+func logGo(msg string) {
+	log.Printf("[GO]   %v\n", msg)
+}
+
+func logOk(msg string) {
+	log.Printf("[OK]   %v\n", msg)
+}
+
+func logFail(msg string) {
+	log.Printf("[FAIL] %v\n", msg)
 }
