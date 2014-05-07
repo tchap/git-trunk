@@ -35,8 +35,8 @@ const (
 )
 
 var (
-	ErrInvalidToken    = errors.New("invalid API token")
-	ErrNoTrailingSlash = errors.New("trailing slash missing")
+	ErrInvalidToken    = errors.New("circleci: invalid API token")
+	ErrNoTrailingSlash = errors.New("circleci: trailing slash missing")
 )
 
 type ErrHTTP struct {

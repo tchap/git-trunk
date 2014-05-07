@@ -26,17 +26,17 @@ import (
 	"os/exec"
 	"strings"
 	//	"os/signal"
-	"regexp"
 
+	"github.com/tchap/trunk/circleci"
 	"github.com/tchap/trunk/config"
 	_ "github.com/tchap/trunk/config/autoload"
 	"github.com/tchap/trunk/git"
 	"github.com/tchap/trunk/version"
 
+	"code.google.com/p/goauth2/oauth"
+	"github.com/google/go-github/github"
 	"github.com/tchap/gocli"
 )
-
-const VersionPattern = "[0-9]+(.[0-9+])?"
 
 var Command = &gocli.Command{
 	UsageLine: `
@@ -99,16 +99,6 @@ func run(cmd *gocli.Command, args []string) {
 	if len(args) != 0 {
 		cmd.Usage()
 		os.Exit(2)
-	}
-
-	if next != "auto" {
-		matched, err := regexp.Match(VersionPattern, []byte(next))
-		if err != nil {
-			log.Fatal("\nError: ", err)
-		}
-		if !matched {
-			log.Fatal("\nError: Invalid version string")
-		}
 	}
 
 	// Perform the shifting.
@@ -196,7 +186,8 @@ func shift(next string) (err error) {
 	if !skipMilestoneCheck && !config.Local.DisableMilestones {
 		logGo(step4.msg)
 		go func() {
-			step4.err = checkMilestone(repoOwner, repoName, versions.Release)
+			step4.err = checkMilestone(repoOwner, repoName,
+				versions.Release, config.Global.GitHubToken)
 			results <- step4
 		}()
 	} else {
@@ -294,15 +285,14 @@ func shift(next string) (err error) {
 	return nil
 }
 
-func checkReleaseBuild(owner, repository, branch, circleCiToken string) error {
-	// Make sure the Circle CI token is specified in the config.
-	if circleCiToken == "" {
-		return config.NewGlobalConfigError("circleci_token is not set")
+func checkReleaseBuild(owner, repository, branch, token string) error {
+	// Fetch the latest release build from Circle CI.
+	circle, err := circleci.NewClient(token)
+	if err != nil {
+		return err
 	}
 
-	// Fetch the latest release build from Circle CI.
-	project := circleci.NewClient(circleCiToken).Project(owner, repository)
-	builds, _, err := project.Builds(&circleci.BuildFilter{
+	builds, _, err := circle.Project(owner, repository).Builds(&circleci.BuildFilter{
 		Branch: branch,
 		Limit:  1,
 	})
@@ -319,6 +309,30 @@ func checkReleaseBuild(owner, repository, branch, circleCiToken string) error {
 		return fmt.Errorf("The release build is not passing (status=%v)", stat)
 	}
 	return nil
+}
+
+func checkMilestone(owner, repository string, ver *version.ReleaseVersion, token string) error {
+	t := &oauth.Transport{
+		Token: &oauth.Token{AccessToken: token},
+	}
+	c := github.NewClient(t.Client())
+	ms, _, err := c.Issues.ListMilestones(owner, repository, &github.MilestoneListOptions{
+		State: "open",
+	})
+	if err != nil {
+		return err
+	}
+
+	title := fmt.Sprintf("Release %v.%v.%v", ver.Major, ver.Minor, ver.Patch)
+	for _, m := range ms {
+		if *m.Title == title {
+			if *m.OpenIssues == 0 {
+				return nil
+			}
+			return fmt.Errorf("milestone not closable: %v", title)
+		}
+	}
+	return fmt.Errorf("milestone not found: %v", title)
 }
 
 func getGitHubOwnerAndRepository() (owner, repository string, err error) {
