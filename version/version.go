@@ -33,6 +33,7 @@ const (
 	ProductionMatcher = "[0-9]+([.][0-9]+){2}"
 	ReleaseMatcher    = ProductionMatcher + "-release"
 	TrunkMatcher      = ProductionMatcher + "-dev"
+	AnyMatcher        = ProductionMatcher + "((-release)|(-dev))?"
 )
 
 type version struct {

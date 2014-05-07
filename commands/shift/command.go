@@ -397,7 +397,7 @@ func commitProductionVersion(prodVersion string) (stderr *bytes.Buffer, err erro
 	path := filepath.Join(root, "package.json")
 
 	// Read package.json
-	file, err := os.Open(path)
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return
 	}
@@ -409,9 +409,9 @@ func commitProductionVersion(prodVersion string) (stderr *bytes.Buffer, err erro
 	}
 
 	// Parse and replace stuff in package.json
-	p := regexp.MustCompile(fmt.Sprintf("\"version\": \"%v\"", version.ProductionMatcher))
+	p := regexp.MustCompile(fmt.Sprintf("\"version\": \"%v\"", version.AnyMatcher))
 	newContent := p.ReplaceAllLiteral(content,
-		[]byte(fmt.Sprintf("\"version\": %v", prodVersion)))
+		[]byte(fmt.Sprintf("\"version\": \"%v\"", prodVersion)))
 	if bytes.Equal(content, newContent) {
 		err = errors.New("package.json: failed to replace version string")
 		return
@@ -419,6 +419,10 @@ func commitProductionVersion(prodVersion string) (stderr *bytes.Buffer, err erro
 
 	// Write package.json
 	_, err = file.Seek(0, os.SEEK_SET)
+	if err != nil {
+		return
+	}
+	err = file.Truncate(0)
 	if err != nil {
 		return
 	}
