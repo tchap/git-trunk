@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -34,9 +35,17 @@ const (
 )
 
 var (
-	ErrInvalidToken    = errros.New("invalid API token")
+	ErrInvalidToken    = errors.New("invalid API token")
 	ErrNoTrailingSlash = errors.New("trailing slash missing")
 )
+
+type ErrHTTP struct {
+	*http.Response
+}
+
+func (err *ErrHTTP) Error() string {
+	return fmt.Sprintf("%v %v -> %v", err.Request.Method, err.Request.URL, err.Status)
+}
 
 type Client struct {
 	// Pivotal Tracker access token to be used to authenticate API requests.
@@ -53,7 +62,7 @@ type Client struct {
 }
 
 func NewClient(apiToken string) (*Client, error) {
-	if !regexp.MatchString("^[a-f0-9]{40}$", apiToken) {
+	if !regexp.MustCompile("^[a-f0-9]{40}$").MatchString(apiToken) {
 		return nil, ErrInvalidToken
 	}
 

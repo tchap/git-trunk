@@ -17,6 +17,12 @@
 
 package circleci
 
+import (
+	"fmt"
+	"net/http"
+	"strconv"
+)
+
 type Project struct {
 	client     *Client
 	owner      string
@@ -37,6 +43,34 @@ type BuildFilter struct {
 	Limit  int
 }
 
-func (p *Project) Builds(filter *BuildFilter) ([]*Builds, *http.Response, error) {
+type Build struct {
+	Status string
+}
 
+func (p *Project) Builds(filter *BuildFilter) ([]*Build, *http.Response, error) {
+	u := fmt.Sprintf("project/%v/%v", p.owner, p.repository)
+	if filter != nil {
+		u += "?"
+		if v := filter.Branch; v != "" {
+			u += "branch=" + v
+		}
+		if v := filter.Offset; v != 0 {
+			u += "offset=" + strconv.Itoa(v)
+		}
+		if v := filter.Limit; v != 0 {
+			u += "limit=" + strconv.Itoa(v)
+		}
+	}
+
+	req, err := p.client.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var builds []*Build
+	resp, err := p.client.Do(req, &builds)
+	if err != nil {
+		return nil, resp, err
+	}
+	return builds, resp, err
 }
