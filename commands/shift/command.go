@@ -57,14 +57,13 @@ var Command = &gocli.Command{
 
   Finishing of the current release:
     1. Make sure that the workspace and Git index are clean.
-    2. Make sure that develop and release are up to date.
+    2. Make sure that develop, release and master are up to date.
     3. Make sure that the release CI builds are green.
     4. Make sure that all the assigned GitHub issues are closed.
-    5. Read the current release version string from package.json, then reset
-       master to point to the current release. Format the version string and
-       commit it into master.
-    6. Tag master as the new production release.
-    7. Close the relevant GitHub milestone.
+    5. Reset master to point to the current release.
+    6. Commit the new production version string.
+    7. Tag master with the appropriate release tag.
+    8. Close the relevant GitHub milestone.
 
   Initialization of the next release:
     1. In case the next version is specified manually, commit it into develop.
@@ -159,6 +158,12 @@ func shift(next string) (err error) {
 
 		stderr, err = git.EnsureBranchesEqual(
 			config.Local.ReleaseBranch, remote+"/"+config.Local.ReleaseBranch)
+		if err != nil {
+			goto Exit
+		}
+
+		stderr, err = git.EnsureBranchesEqual(
+			config.Local.ProductionBranch, remote+"/"+config.Local.ProductionBranch)
 		if err != nil {
 			goto Exit
 		}
