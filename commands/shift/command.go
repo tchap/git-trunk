@@ -19,10 +19,12 @@ package shift
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	//	"os/signal"
 
@@ -37,6 +39,8 @@ import (
 	"github.com/google/go-github/github"
 	"github.com/tchap/gocli"
 )
+
+var ErrActionsFailed = errors.New("some of the requested actions have failed")
 
 var Command = &gocli.Command{
 	UsageLine: `
@@ -101,7 +105,7 @@ func run(cmd *gocli.Command, args []string) {
 
 	// Perform the shifting.
 	if err := shift(next); err != nil {
-		log.Fatal("\nError: ", err)
+		log.Fatal("\nFatal: ", err)
 	}
 }
 
@@ -206,11 +210,11 @@ func shift(next string) (err error) {
 		if stderr := res.stderr; stderr != nil && stderr.Len() != 0 {
 			log.Print(stderr.String())
 		}
-		log.Println("\nError: ", res.err)
+		log.Println("Error: ", res.err)
 		err = res.err
 	}
 	if err != nil {
-		return
+		return ErrActionsFailed
 	}
 
 	/*
@@ -311,6 +315,13 @@ func checkReleaseBuild(owner, repository, branch, token string) error {
 }
 
 func checkMilestone(owner, repository string, ver *version.ReleaseVersion, token string) error {
+	if token == "" {
+		return errors.New("github: token is not set")
+	}
+	if !regexp.MustCompile("[0-9a-f]{40}").MatchString(token) {
+		return errors.New("github: invalid token string")
+	}
+
 	t := &oauth.Transport{
 		Token: &oauth.Token{AccessToken: token},
 	}

@@ -35,7 +35,8 @@ const (
 )
 
 var (
-	ErrInvalidToken    = errors.New("circleci: invalid API token")
+	ErrEmptyToken      = errors.New("circleci: token in not set")
+	ErrInvalidToken    = errors.New("circleci: invalid token string")
 	ErrNoTrailingSlash = errors.New("circleci: trailing slash missing")
 )
 
@@ -62,6 +63,9 @@ type Client struct {
 }
 
 func NewClient(apiToken string) (*Client, error) {
+	if apiToken == "" {
+		return nil, ErrEmptyToken
+	}
 	if !regexp.MustCompile("^[a-f0-9]{40}$").MatchString(apiToken) {
 		return nil, ErrInvalidToken
 	}
