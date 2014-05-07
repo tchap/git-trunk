@@ -47,27 +47,30 @@ func ReadLocalConfig() (*LocalConfig, error) {
 	path := filepath.Join(root, LocalConfigFileName)
 
 	// Read the config file.
+	var (
+		config  LocalConfig
+		content bytes.Buffer
+	)
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			goto Exit
 		}
 		return nil, err
 	}
 	defer file.Close()
 
-	var content bytes.Buffer
 	if _, err := io.Copy(&content, file); err != nil {
 		return nil, err
 	}
 
 	// Parse the content.
-	var config LocalConfig
 	if err := yaml.Unmarshal(content.Bytes(), &config); err != nil {
 		return nil, err
 	}
 
 	// Fill in the defaults where necessary.
+Exit:
 	if config.TrunkBranch == "" {
 		config.TrunkBranch = DefaultTrunkBranch
 	}
