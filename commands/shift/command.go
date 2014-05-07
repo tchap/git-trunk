@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/url"
 	"os"
@@ -386,17 +387,26 @@ func commitProductionVersion(prodVersion string) (stderr *bytes.Buffer, err erro
 		return
 	}
 
-	// Update package.json
+	// Get the absolute path of package.json
 	root, stderr, err := git.RepositoryRootAbsolutePath()
 	if err != nil {
 		return
 	}
-	pkgPath := filepath.Join(root, "package.json")
-	content, err := ioutil.ReadFile(pkgPath)
+	path := filepath.Join(root, "package.json")
+
+	// Read package.json
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	content, err := ioutil.ReadAll(file)
 	if err != nil {
 		return
 	}
 
+	// Parse and replace stuff in package.json
 	p := regexp.MustCompile(fmt.Sprintf("\"version\": \"%v\"", version.ProductionMatcher))
 	newContent := p.ReplaceAllLiteral(content,
 		[]byte(fmt.Sprintf("\"version\": %v", prodVersion)))
@@ -405,8 +415,18 @@ func commitProductionVersion(prodVersion string) (stderr *bytes.Buffer, err erro
 		return
 	}
 
+	// Write package.json
+	_, err = file.Seek(0, os.SEEK_SET)
+	if err != nil {
+		return
+	}
+	_, err = io.Copy(file, bytes.NewReader(newContent))
+	if err != nil {
+		return
+	}
+
 	// Commit package.json
-	_, stderr, err = git.Git("add", pkgPath)
+	_, stderr, err = git.Git("add", path)
 	if err != nil {
 		return
 	}
