@@ -149,11 +149,13 @@ func shift(next string) (err error) {
 	}
 
 	// Prepare for running the following steps concurrently.
-	results := make(chan *result, 3)
+	var numGoroutines int
+	results := make(chan *result)
 
 	// Step 2: Make sure that develop and release are up to date.
 	step2 := &result{msg: "Check whether the local and remote refs are synchronized"}
 	log.Go(step2.msg)
+	numGoroutines++
 	go func() {
 		step2.stderr, step2.err = checkBranchesInSync()
 		results <- step2
@@ -163,6 +165,7 @@ func shift(next string) (err error) {
 	step3 := &result{msg: "Check the latest release build"}
 	if !skipBuildCheck && !config.Local.DisableCircleCi {
 		log.Go(step3.msg)
+		numGoroutines++
 		go func() {
 			step3.err = checkReleaseBuild(repoOwner, repoName,
 				config.Local.ReleaseBranch, config.Global.CircleCiToken)
@@ -170,13 +173,13 @@ func shift(next string) (err error) {
 		}()
 	} else {
 		log.Skip(step3.msg)
-		results <- step3
 	}
 
 	// Step 4: Make sure that all the assigned GitHub issues are closed.
 	step4 := &result{msg: "Check the relevant release milestone"}
 	if !skipMilestoneCheck && !config.Local.DisableMilestones {
 		log.Go(step4.msg)
+		numGoroutines++
 		go func() {
 			step4.err = checkMilestone(repoOwner, repoName,
 				versions.Release, config.Global.GitHubToken)
@@ -184,11 +187,10 @@ func shift(next string) (err error) {
 		}()
 	} else {
 		log.Skip(step4.msg)
-		results <- step4
 	}
 
 	// Wait for the steps goroutines to return and print the results.
-	for i := 0; i < cap(results); i++ {
+	for i := 0; i < numGoroutines; i++ {
 		res := <-results
 		if res.err == nil {
 			log.Ok(res.msg)
