@@ -20,7 +20,6 @@ package shift
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -31,6 +30,7 @@ import (
 	"github.com/tchap/trunk/config"
 	_ "github.com/tchap/trunk/config/autoload"
 	"github.com/tchap/trunk/git"
+	"github.com/tchap/trunk/log"
 	"github.com/tchap/trunk/version"
 
 	"code.google.com/p/goauth2/oauth"
@@ -93,8 +93,6 @@ func init() {
 }
 
 func run(cmd *gocli.Command, args []string) {
-	log.SetFlags(0)
-
 	// Parse the arguments.
 	if len(args) != 0 {
 		cmd.Usage()
@@ -114,23 +112,24 @@ type result struct {
 }
 
 func shift(next string) (err error) {
+	// Parse the relevant Git remote to get the GitHub repository name and owner.
+	log.Run("Read the GitHub repository name and owner")
+	repoOwner, repoName, stderr, err := getGitHubOwnerAndRepository()
+	if err != nil {
+		log.Print(stderr.String())
+		return
+	}
+
 	// Read the current version strings.
-	logRun("Load the current version strings")
+	log.Run("Load the current version strings")
 	versions, stderr, err := version.LoadVersions()
 	if err != nil {
 		log.Print(stderr.String())
 		return
 	}
 
-	// Parse the relevant Git remote to get the GitHub repository name and owner.
-	logRun("Read the GitHub repository name and owner")
-	repoOwner, repoName, err := getGitHubOwnerAndRepository()
-	if err != nil {
-		return
-	}
-
 	// Step 1: Make sure that the workspace and Git index are clean.
-	logRun("Check the workspace and Git index")
+	log.Run("Check the workspace and Git index")
 	if stdout, _, err := git.EnsureCleanWorkingTree(); err != nil {
 		log.Print(stdout.String())
 		return err
@@ -141,7 +140,7 @@ func shift(next string) (err error) {
 
 	// Step 2: Make sure that develop and release are up to date.
 	step2 := &result{msg: "Check whether the local and remote refs are synchronized"}
-	logGo(step2.msg)
+	log.Go(step2.msg)
 	go func() {
 		stderr, err := git.Fetch(remote)
 		if err != nil {
@@ -170,28 +169,28 @@ func shift(next string) (err error) {
 	// Step 3: Make sure that the CI release build is green.
 	step3 := &result{msg: "Check the latest release build"}
 	if !skipBuildCheck && !config.Local.DisableCircleCi {
-		logGo(step3.msg)
+		log.Go(step3.msg)
 		go func() {
 			step3.err = checkReleaseBuild(repoOwner, repoName,
 				config.Local.ReleaseBranch, config.Global.CircleCiToken)
 			results <- step3
 		}()
 	} else {
-		logSkip(step3.msg)
+		log.Skip(step3.msg)
 		results <- step3
 	}
 
 	// Step 4: Make sure that all the assigned GitHub issues are closed.
 	step4 := &result{msg: "Check the relevant release milestone"}
 	if !skipMilestoneCheck && !config.Local.DisableMilestones {
-		logGo(step4.msg)
+		log.Go(step4.msg)
 		go func() {
 			step4.err = checkMilestone(repoOwner, repoName,
 				versions.Release, config.Global.GitHubToken)
 			results <- step4
 		}()
 	} else {
-		logSkip(step4.msg)
+		log.Skip(step4.msg)
 		results <- step4
 	}
 
@@ -199,11 +198,11 @@ func shift(next string) (err error) {
 	for i := 0; i < cap(results); i++ {
 		res := <-results
 		if res.err == nil {
-			logOk(res.msg)
+			log.Ok(res.msg)
 			continue
 		}
 
-		logFail(res.msg)
+		log.Fail(res.msg)
 		if stderr := res.stderr; stderr != nil && stderr.Len() != 0 {
 			log.Print(stderr.String())
 		}
@@ -335,19 +334,16 @@ func checkMilestone(owner, repository string, ver *version.ReleaseVersion, token
 	return fmt.Errorf("milestone not found: %v", title)
 }
 
-func getGitHubOwnerAndRepository() (owner, repository string, err error) {
+func getGitHubOwnerAndRepository() (owner, repository string, stderr *bytes.Buffer, err error) {
 	// Get the GitHub owner and repository from the relevant remote URL.
-	var (
-		stdout bytes.Buffer
-		stderr bytes.Buffer
-	)
-	cmd := exec.Command("git", "config", "--get", "remote."+remote+"url")
+	var stdout bytes.Buffer
+	stderr = new(bytes.Buffer)
+	cmd := exec.Command("git", "config", "--get", "remote."+remote+".url")
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stderr = stderr
 
 	err = cmd.Run()
 	if err != nil {
-		log.Print(stderr.String())
 		return
 	}
 
@@ -370,24 +366,4 @@ func getGitHubOwnerAndRepository() (owner, repository string, err error) {
 	owner = parts[1]
 	repository = parts[2]
 	return
-}
-
-func logRun(msg string) {
-	log.Printf("[RUN]  %v\n", msg)
-}
-
-func logSkip(msg string) {
-	log.Printf("[SKIP] %v\n", msg)
-}
-
-func logGo(msg string) {
-	log.Printf("[GO]   %v\n", msg)
-}
-
-func logOk(msg string) {
-	log.Printf("[OK]   %v\n", msg)
-}
-
-func logFail(msg string) {
-	log.Printf("[FAIL] %v\n", msg)
 }

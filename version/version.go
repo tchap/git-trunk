@@ -62,7 +62,7 @@ type ReleaseVersion struct {
 func newReleaseVersion(raw string) (*ReleaseVersion, error) {
 	version, ok := parseVersion(raw, "release")
 	if !ok {
-		return nil, fmt.Errorf("invalid trunk version string: %v", raw)
+		return nil, fmt.Errorf("invalid release version string: %v", raw)
 	}
 	return &ReleaseVersion{version}, nil
 }
@@ -76,9 +76,9 @@ type ProductionVersion struct {
 }
 
 func newProductionVersion(raw string) (*ProductionVersion, error) {
-	version, ok := parseVersion(raw, "release")
+	version, ok := parseVersion(raw, "")
 	if !ok {
-		return nil, fmt.Errorf("invalid trunk version string: %v", raw)
+		return nil, fmt.Errorf("invalid production version string: %v", raw)
 	}
 	return &ProductionVersion{version}, nil
 }
@@ -172,7 +172,7 @@ func readVersion(branch string) (version string, stderr *bytes.Buffer, err error
 func parseVersion(versionString, versionSuffix string) (*version, bool) {
 	pattern := "^([0-9]+)[.]([0-9]+)[.]([0-9]+)"
 	if versionSuffix != "" {
-		pattern += "-" + versionSuffix
+		pattern += "-" + versionSuffix + "$"
 	}
 	pattern += "$"
 
