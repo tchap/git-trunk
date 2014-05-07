@@ -21,10 +21,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"path/filepath"
 	"regexp"
+	"strconv"
 
 	"github.com/tchap/trunk/config"
 	_ "github.com/tchap/trunk/config/autoload"
@@ -35,6 +33,10 @@ type version struct {
 	Major uint
 	Minor uint
 	Patch uint
+}
+
+func (v *version) clone() *version {
+	return &version{v.Major, v.Minor, v.Patch}
 }
 
 type TrunkVersion struct {
@@ -69,14 +71,20 @@ func (v *ReleaseVersion) String() string {
 	return fmt.Sprintf("%v.%v.%v-release", v.Major, v.Minor, v.Patch)
 }
 
-type ProductionVersion version
+type ProductionVersion struct {
+	*version
+}
 
 func newProductionVersion(raw string) (*ProductionVersion, error) {
 	version, ok := parseVersion(raw, "release")
 	if !ok {
 		return nil, fmt.Errorf("invalid trunk version string: %v", raw)
 	}
-	return (*ProductionVersion)(version), nil
+	return &ProductionVersion{version}, nil
+}
+
+func (v *ProductionVersion) String() string {
+	return fmt.Sprintf("%v.%v.%v", v.Major, v.Minor, v.Patch)
 }
 
 type Versions struct {
@@ -86,7 +94,7 @@ type Versions struct {
 }
 
 func LoadVersions() (versions *Versions, stderr *bytes.Buffer, err error) {
-	trunkString, stderr, err = readVersion(config.Local.TrunkBranch)
+	trunkString, stderr, err := readVersion(config.Local.TrunkBranch)
 	if err != nil {
 		return
 	}
@@ -99,7 +107,7 @@ func LoadVersions() (versions *Versions, stderr *bytes.Buffer, err error) {
 	if err != nil {
 		return
 	}
-	releaseVersion, err := newReleaseVersion(trunkString)
+	releaseVersion, err := newReleaseVersion(releaseString)
 	if err != nil {
 		return
 	}
@@ -108,7 +116,7 @@ func LoadVersions() (versions *Versions, stderr *bytes.Buffer, err error) {
 	if err != nil {
 		return
 	}
-	productionVersion, err := newReleaseVersion(trunkString)
+	productionVersion, err := newProductionVersion(productionString)
 	if err != nil {
 		return
 	}
@@ -117,15 +125,35 @@ func LoadVersions() (versions *Versions, stderr *bytes.Buffer, err error) {
 	return
 }
 
-func (vs *Versions) Next(next string) (versions *Versions, stderr *bytes.Buffer, err error) {
-
+func (vs *Versions) Next(next string) (*Versions, error) {
+	var versions *Versions
+	if next == "auto" {
+		versions = &Versions{
+			Trunk:      &TrunkVersion{vs.Trunk.version.clone()},
+			Release:    &ReleaseVersion{vs.Trunk.version.clone()},
+			Production: &ProductionVersion{vs.Trunk.version.clone()},
+		}
+		versions.Trunk.Minor++
+	} else {
+		prodVersion, err := newProductionVersion(next)
+		if err != nil {
+			return nil, err
+		}
+		versions := &Versions{
+			Trunk:      &TrunkVersion{prodVersion.version.clone()},
+			Release:    &ReleaseVersion{prodVersion.version.clone()},
+			Production: prodVersion,
+		}
+		versions.Trunk.Minor++
+	}
+	return versions, nil
 }
 
 func readVersion(branch string) (version string, stderr *bytes.Buffer, err error) {
 	// Read package.json
 	stdout, stderr, err := git.ShowByBranch(branch, "package.json")
 	if err != nil {
-		return err
+		return
 	}
 
 	// Parse package.json
@@ -137,10 +165,11 @@ func readVersion(branch string) (version string, stderr *bytes.Buffer, err error
 		return
 	}
 
-	return packageJson.Version, nil
+	version = packageJson.Version
+	return
 }
 
-func parseVersion(version, versionSuffix string) (*version, bool) {
+func parseVersion(versionString, versionSuffix string) (*version, bool) {
 	pattern := "^([0-9]+)[.]([0-9]+)[.]([0-9]+)"
 	if versionSuffix != "" {
 		pattern += "-" + versionSuffix
@@ -148,7 +177,7 @@ func parseVersion(version, versionSuffix string) (*version, bool) {
 	pattern += "$"
 
 	p := regexp.MustCompile(pattern)
-	parts := p.FindStringSubmatch(version)
+	parts := p.FindStringSubmatch(versionString)
 	if len(parts) != 4 {
 		return nil, false
 	}
@@ -157,5 +186,5 @@ func parseVersion(version, versionSuffix string) (*version, bool) {
 	minor, _ := strconv.ParseUint(parts[2], 10, 32)
 	patch, _ := strconv.ParseUint(parts[3], 10, 32)
 
-	return &versions{major, minor, patch}, true
+	return &version{uint(major), uint(minor), uint(patch)}, true
 }
