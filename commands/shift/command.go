@@ -302,7 +302,7 @@ func checkReleaseBuild(owner, repository, branch, circleCiToken string) error {
 
 	// Fetch the latest release build from Circle CI.
 	project := circleci.NewClient(circleCiToken).Project(owner, repository)
-	builds, err := project.Builds(&circleci.BuildFilter{
+	builds, _, err := project.Builds(&circleci.BuildFilter{
 		Branch: branch,
 		Limit:  1,
 	})

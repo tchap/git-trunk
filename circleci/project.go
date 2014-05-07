@@ -17,6 +17,12 @@
 
 package circleci
 
+type Project struct {
+	client     *Client
+	owner      string
+	repository string
+}
+
 func (c *Client) Project(owner, repository string) *Project {
 	return &Project{
 		client:     c,
