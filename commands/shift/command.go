@@ -31,6 +31,7 @@ import (
 	"github.com/tchap/trunk/config"
 	_ "github.com/tchap/trunk/config/autoload"
 	"github.com/tchap/trunk/git"
+	"github.com/tchap/trunk/version"
 
 	"github.com/tchap/gocli"
 )
@@ -123,6 +124,14 @@ type result struct {
 }
 
 func shift(next string) (err error) {
+	// Read the current version strings.
+	logRun("Load the current version strings")
+	versions, stderr, err := version.LoadVersions()
+	if err != nil {
+		log.Print(stderr.String())
+		return
+	}
+
 	// Parse the relevant Git remote to get the GitHub repository name and owner.
 	logRun("Read the GitHub repository name and owner")
 	repoOwner, repoName, err := getGitHubOwnerAndRepository()
@@ -187,7 +196,7 @@ func shift(next string) (err error) {
 	if !skipMilestoneCheck && !config.Local.DisableMilestones {
 		logGo(step4.msg)
 		go func() {
-			step4.err = checkMilestone(repoOwner, repoName, versions.ReleaseCurrent)
+			step4.err = checkMilestone(repoOwner, repoName, versions.Release)
 			results <- step4
 		}()
 	} else {

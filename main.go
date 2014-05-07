@@ -20,7 +20,7 @@ package main
 import (
 	"os"
 
-	"github.com/tchap/trunk/shift"
+	"github.com/tchap/trunk/commands/shift"
 
 	"github.com/tchap/gocli"
 )
