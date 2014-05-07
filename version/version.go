@@ -29,6 +29,12 @@ import (
 	"github.com/tchap/trunk/git"
 )
 
+const (
+	ProductionMatcher = "[0-9]+([.][0-9]+){2}"
+	ReleaseMatcher    = ProductionMatcher + "-release"
+	TrunkMatcher      = ProductionMatcher + "-dev"
+)
+
 type version struct {
 	Major uint
 	Minor uint

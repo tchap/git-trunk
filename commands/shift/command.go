@@ -18,16 +18,20 @@
 package shift
 
 import (
+	// stdlib
 	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strings"
-	//	"os/signal"
 
+	// trunk
 	"github.com/tchap/trunk/circleci"
 	"github.com/tchap/trunk/config"
 	_ "github.com/tchap/trunk/config/autoload"
@@ -35,6 +39,7 @@ import (
 	"github.com/tchap/trunk/log"
 	"github.com/tchap/trunk/version"
 
+	// others
 	"code.google.com/p/goauth2/oauth"
 	"github.com/google/go-github/github"
 	"github.com/tchap/gocli"
@@ -119,7 +124,7 @@ func shift(next string) (err error) {
 	log.Run("Read the GitHub repository name and owner")
 	repoOwner, repoName, stderr, err := getGitHubOwnerAndRepository()
 	if err != nil {
-		log.Print(stderr.String())
+		log.Print(stderr)
 		return
 	}
 
@@ -127,7 +132,11 @@ func shift(next string) (err error) {
 	log.Run("Load the current version strings")
 	versions, stderr, err := version.LoadVersions()
 	if err != nil {
-		log.Print(stderr.String())
+		log.Print(stderr)
+		return
+	}
+	nextVersions, err := versions.Next(next)
+	if err != nil {
 		return
 	}
 
@@ -187,7 +196,7 @@ func shift(next string) (err error) {
 
 		log.Fail(res.msg)
 		if stderr := res.stderr; stderr != nil && stderr.Len() != 0 {
-			log.Print(stderr.String())
+			log.Print(stderr)
 		}
 		log.Println("Error: ", res.err)
 		err = res.err
@@ -196,75 +205,67 @@ func shift(next string) (err error) {
 		return ErrActionsFailed
 	}
 
-	/*
-		// Start blocking os.Interrupt signal, the following actions are fast to
-		// perform and there is no reason to try to interrupt them really.
-		signalCh := make(chan os.Signal, 1)
-		signal.Notify(signalCh, os.Interrupt)
-		closeCh := make(chan struct{})
-		defer func() {
-			close(closeCh)
-		}()
-		go func() {
-			for {
-				select {
-				case <-signalCh:
-					log.Print("Signal received but ignored. Wait for the action to finish.")
-				case <-closeCh:
-					return
-				}
+	// Start blocking os.Interrupt signal, the following actions are fast to
+	// perform and there is no reason to try to interrupt them really.
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, os.Interrupt)
+	closeCh := make(chan struct{})
+	defer func() {
+		close(closeCh)
+	}()
+	go func() {
+		for {
+			select {
+			case <-signalCh:
+				log.Print("Signal received but ignored. Wait for the action to finish.")
+			case <-closeCh:
+				return
 			}
-		}()
-
-		// Make sure the same branch is checked out when we are done.
-		output, err = exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
-		if err != nil {
-			return
 		}
-		currentBranch := string(bytes.TrimSpace(output))
-		defer func() {
-			log.Printf("---> Checking out the original branch (%v)\n", currentBranch)
-			output, ex := exec.Command("git", "checkout", currentBranch).CombinedOutput()
-			if ex != nil {
-				log.Print(output)
-				if err == nil {
-					err = ex
-				}
-			}
-		}()
+	}()
 
-		// Rollback develop and release in case something goes wrong.
-		trunkHexsha, err := hexsha(TrunkBranch)
-		if err != nil {
-			return
+	// Make sure the same branch is checked out when we are done.
+	currentBranch, stderr, err := git.CurrentBranch()
+	if err != nil {
+		log.Print(stderr)
+	}
+	defer func() {
+		log.Run("Check out the original branch")
+		stderr, ex := git.Checkout(currentBranch)
+		if ex != nil {
+			log.Print(stderr)
+			if err == nil {
+				err = ex
+			}
 		}
-		defer func() {
-			if err != nil {
-				reset(TrunkBranch, trunkHexsha)
-			}
-		}()
+	}()
 
-		releaseHexsha, err := hexsha(ReleaseBranch)
-		if err != nil {
-			return
-		}
-		defer func() {
-			if err != nil {
-				reset(ReleaseBranch, releaseHexsha)
-			}
-		}()
+	// Step 5: Reset master to point to the current release.
+	log.Run("Reset master to point to the current release")
+	stderr, err = git.ResetHard(config.Local.ProductionBranch, config.Local.ReleaseBranch)
+	if err != nil {
+		log.Print(stderr)
+		return
+	}
 
-		//    3. Close the current GitHub release milestone.
-		//       This operation will fail unless all the assigned issues are closed.
-		//    4. Tag the current release branch.
-		//    5. Reset the master branch to point to the newly created release tag.
-		//    6. Reset the release branch to point to develop (trunk).
-		//    7. If package.json is present in the repository, write the new version
-		//       into the file and commit it into the release branch.
-		//    8. Push the release tag and all the branches (develop, release, master).
-		//    9. Create a new GitHub milestone for the next release.
-	*/
-	return nil
+	// Step 6: Commit the new production version string.
+	log.Run("Commit the new production version string")
+	stderr, err = commitProductionVersion(nextVersions.Production.String())
+	if err != nil {
+		log.Print(stderr)
+		return
+	}
+
+	// Step 7: Tag master with the appropriate release tag.
+	log.Run("Tag master with the appropriate release tag")
+	stderr, err = git.Tag("v" + nextVersions.Production.String())
+	if err != nil {
+		log.Print(stderr)
+		return
+	}
+
+	// Step 8: Close the relevant GitHub milestone.
+	return
 }
 
 func checkBranchesInSync() (stderr *bytes.Buffer, err error) {
@@ -375,5 +376,43 @@ func getGitHubOwnerAndRepository() (owner, repository string, stderr *bytes.Buff
 
 	owner = parts[1]
 	repository = parts[2]
+	return
+}
+
+func commitProductionVersion(prodVersion string) (stderr *bytes.Buffer, err error) {
+	// Checkout master
+	stderr, err = git.Checkout(config.Local.ProductionBranch)
+	if err != nil {
+		return
+	}
+
+	// Update package.json
+	root, stderr, err := git.RepositoryRootAbsolutePath()
+	if err != nil {
+		return
+	}
+	pkgPath := filepath.Join(root, "package.json")
+	content, err := ioutil.ReadFile(pkgPath)
+	if err != nil {
+		return
+	}
+
+	p := regexp.MustCompile(fmt.Sprintf("\"version\": \"%v\"", version.ProductionMatcher))
+	newContent := p.ReplaceAllLiteral(content,
+		[]byte(fmt.Sprintf("\"version\": %v", prodVersion)))
+	if bytes.Equal(content, newContent) {
+		err = errors.New("package.json: failed to replace version string")
+		return
+	}
+
+	// Commit package.json
+	_, stderr, err = git.Git("add", pkgPath)
+	if err != nil {
+		return
+	}
+	_, stderr, err = git.Git("commit", "-m", fmt.Sprintf("Bump version to %v", prodVersion))
+	if err != nil {
+		return
+	}
 	return
 }

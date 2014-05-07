@@ -51,6 +51,11 @@ func ShowByBranch(branch, file string) (content, stderr *bytes.Buffer, err error
 	return Git("show", branch+":"+file)
 }
 
+func Tag(tag string) (stderr *bytes.Buffer, err error) {
+	_, stderr, err = Git("tag", tag)
+	return
+}
+
 func Hexsha(ref string) (hexsha string, stderr *bytes.Buffer, err error) {
 	stdout, stderr, err := Git("rev-parse", ref)
 	if err != nil {
