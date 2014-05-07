@@ -52,12 +52,21 @@ func (p *Project) Builds(filter *BuildFilter) ([]*Build, *http.Response, error) 
 	if filter != nil {
 		u += "?"
 		if v := filter.Branch; v != "" {
+			if !strings.HasSuffix(u, "?") {
+				u += "&"
+			}
 			u += "branch=" + v
 		}
 		if v := filter.Offset; v != 0 {
+			if !strings.HasSuffix(u, "?") {
+				u += "&"
+			}
 			u += "offset=" + strconv.Itoa(v)
 		}
 		if v := filter.Limit; v != 0 {
+			if !strings.HasSuffix(u, "?") {
+				u += "&"
+			}
 			u += "limit=" + strconv.Itoa(v)
 		}
 	}
