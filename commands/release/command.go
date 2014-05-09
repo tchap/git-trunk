@@ -72,10 +72,9 @@ var Command = &gocli.Command{
     8. Close the relevant GitHub milestone.
 
   Initialization of the next release:
-    1. In case the next version is specified manually, commit it into develop.
-    2. Reset release to point to develop and commit the new version string.
-    3. Increment the minor version number and commit it into develop.
-    4. Create a new GitHub milestone for the next release.
+    1. Reset release to point to develop and commit the new version string.
+    2. Increment the minor version number and commit it into develop.
+    3. Create a new GitHub milestone for the next release.
 
   Finalization:
     1. Push the release tag and all the branches (develop, release, master).
