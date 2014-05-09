@@ -117,7 +117,7 @@ func run(cmd *gocli.Command, args []string) {
 
 	// Perform the shifting.
 	if err := shift(next); err != nil {
-		log.Fatal("\nFatal: ", err)
+		log.Fatalln("\nFatal: ", err)
 	}
 }
 
