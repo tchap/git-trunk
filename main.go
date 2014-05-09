@@ -20,6 +20,7 @@ package main
 import (
 	"os"
 
+	"github.com/tchap/trunk/commands/check"
 	"github.com/tchap/trunk/commands/release"
 
 	"github.com/tchap/gocli"
@@ -38,6 +39,7 @@ func main() {
   Trunk Based Development on GitHub. See the list of subcommands.`
 
 	// Register subscommands.
+	trunk.MustRegisterSubcommand(check.Command)
 	trunk.MustRegisterSubcommand(release.Command)
 
 	// Run the application.
