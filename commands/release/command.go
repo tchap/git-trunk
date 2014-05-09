@@ -204,7 +204,7 @@ func shift(next string) (err error) {
 			continue
 		}
 
-		log.V(log.Verbose).Fail(res.msg)
+		log.Fail(res.msg)
 		if stderr := res.stderr; stderr != nil && stderr.Len() != 0 {
 			log.Print(stderr)
 		}
