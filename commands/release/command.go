@@ -248,11 +248,28 @@ func shift(next string) (err error) {
 
 	// Step 5: Reset master to point to the current release.
 	log.V(log.Verbose).Run("Reset master to point to the current release")
+	currentProduction, stderr, err := git.Hexsha(config.Local.Branches.Production)
+	if err != nil {
+		return
+	}
+
 	stderr, err = git.ResetHard(config.Local.Branches.Production, config.Local.Branches.Release)
 	if err != nil {
 		log.Print(stderr)
 		return
 	}
+
+	// Roll back master in case there is an error encountered later.
+	defer func() {
+		if err != nil {
+			log.V(log.Verbose).Run("Roll back the production branch")
+			stderr, ex := git.ResetHard(config.Local.Branches.Production, currentProduction)
+			if ex != nil {
+				log.Print(stderr)
+				log.Println("Error: ", ex)
+			}
+		}
+	}()
 
 	// Step 6: Commit the new production version string.
 	log.V(log.Verbose).Run("Commit the new production version string")
@@ -264,17 +281,40 @@ func shift(next string) (err error) {
 
 	// Step 7: Tag master with the appropriate release tag.
 	log.V(log.Verbose).Run("Tag master with the appropriate release tag")
-	stderr, err = git.Tag("v" + nextVersions.Production.String())
+	tag := "v" + nextVersions.Production.String()
+	stderr, err = git.Tag(tag)
 	if err != nil {
 		log.Print(stderr)
 		return
 	}
+	// Delete the tag in case there is an error encountered later.
+	defer func() {
+		if err != nil {
+			log.V(log.Verbose).Run("Roll back the release tag")
+			stderr, ex := git.DeleteTag(tag)
+			if ex != nil {
+				log.Print(stderr)
+				log.Println("Error: ", ex)
+			}
+		}
+	}()
 
 	// Step 8: Close the relevant GitHub milestone.
 	if config.Local.Plugins.Milestones {
 		log.V(log.Verbose).Run("Close the relevant release milestone")
 		err = closeMilestone(repoOwner, repoName, config.Global.Tokens.GitHub, versions.Release)
 	}
+	// Re-open the milestone in case there is an error encountered later.
+	defer func() {
+		if err != nil {
+			log.V(log.Verbose).Run("Re-open the relevant release milestone")
+			ex := openMilestone(repoOwner, repoName, config.Global.Tokens.GitHub, versions.Release)
+			if ex != nil {
+				log.Println("Error: ", ex)
+			}
+		}
+	}()
+
 	return
 }
 
@@ -342,6 +382,14 @@ func checkMilestone(owner, repository, token string, ver *version.ReleaseVersion
 }
 
 func closeMilestone(owner, repository, token string, ver *version.ReleaseVersion) error {
+	return setMilestoneStatus(owner, repository, token, ver, "closed")
+}
+
+func openMilestone(owner, repository, token string, ver *version.ReleaseVersion) error {
+	return setMilestoneStatus(owner, repository, token, ver, "open")
+}
+
+func setMilestoneStatus(owner, repository, token string, ver *version.ReleaseVersion, status string) error {
 	client, err := newGitHubClient(owner, repository, token)
 	if err != nil {
 		return err
@@ -353,7 +401,7 @@ func closeMilestone(owner, repository, token string, ver *version.ReleaseVersion
 	}
 
 	_, _, err = client.Issues.EditMilestone(owner, repository, *m.Number, &github.Milestone{
-		State: github.String("closed"),
+		State: github.String(status),
 	})
 	return err
 }
