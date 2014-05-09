@@ -117,8 +117,19 @@ func startRelease(next *version.Versions) (err error) {
 		if err != nil {
 			return failure(nil, err)
 		}
+		defer func() {
+			if err != nil {
+				ex := deleteMilestone(repoOwner, repoName,
+					config.Global.Tokens.GitHub, next.Production)
+				if ex != nil {
+					failure(nil, ex)
+				}
+			}
+		}()
 	}
 
+	// Push the branches.
+	err = push()
 	return
 }
 
