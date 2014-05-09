@@ -50,7 +50,7 @@ var ErrActionsFailed = errors.New("some of the requested actions have failed")
 
 var Command = &gocli.Command{
 	UsageLine: `
-  release [-remote=REMOTE] [-next=NEXT]
+  release [-v] [-remote=REMOTE] [-next=NEXT]
         [-skip_milestone_check] [-skip_build_check]`,
 	Short: "perform the release shifting operation",
 	Long: `
@@ -84,6 +84,7 @@ var Command = &gocli.Command{
 }
 
 var (
+	verbose            bool
 	remote             string = "origin"
 	next               string = "auto"
 	skipMilestoneCheck bool
@@ -91,6 +92,8 @@ var (
 )
 
 func init() {
+	Command.Flags.BoolVar(&verbose, "v", verbose,
+		"print more verbose output")
 	Command.Flags.StringVar(&remote, "remote", remote,
 		"Git remote to modify")
 	Command.Flags.StringVar(&next, "next", next,
@@ -108,6 +111,10 @@ func run(cmd *gocli.Command, args []string) {
 		os.Exit(2)
 	}
 
+	if verbose {
+		log.SetV(log.Verbose)
+	}
+
 	// Perform the shifting.
 	if err := shift(next); err != nil {
 		log.Fatal("\nFatal: ", err)
@@ -122,7 +129,7 @@ type result struct {
 
 func shift(next string) (err error) {
 	// Parse the relevant Git remote to get the GitHub repository name and owner.
-	log.Run("Read the GitHub repository name and owner")
+	log.V(log.Verbose).Run("Read the GitHub repository name and owner")
 	repoOwner, repoName, stderr, err := getGitHubOwnerAndRepository()
 	if err != nil {
 		log.Print(stderr)
@@ -130,7 +137,7 @@ func shift(next string) (err error) {
 	}
 
 	// Read the current version strings.
-	log.Run("Load the current version strings")
+	log.V(log.Verbose).Run("Load the current version strings")
 	versions, stderr, err := version.LoadVersions()
 	if err != nil {
 		log.Print(stderr)
@@ -142,7 +149,7 @@ func shift(next string) (err error) {
 	}
 
 	// Step 1: Make sure that the workspace and Git index are clean.
-	log.Run("Make sure the workspace and Git index are clean")
+	log.V(log.Verbose).Run("Make sure the workspace and Git index are clean")
 	if stdout, _, err := git.EnsureCleanWorkingTree(); err != nil {
 		log.Print(stdout.String())
 		return err
@@ -154,7 +161,7 @@ func shift(next string) (err error) {
 
 	// Step 2: Make sure that develop, release and master are up to date.
 	step2 := &result{msg: "Make sure that all significant branches are synchronized"}
-	log.Go(step2.msg)
+	log.V(log.Verbose).Go(step2.msg)
 	numGoroutines++
 	go func() {
 		step2.stderr, step2.err = checkBranchesInSync()
@@ -164,7 +171,7 @@ func shift(next string) (err error) {
 	// Step 3: Make sure that the CI release build is green.
 	step3 := &result{msg: "Check the latest release build"}
 	if !skipBuildCheck && !config.Local.Plugins.BuildStatus {
-		log.Go(step3.msg)
+		log.V(log.Verbose).Go(step3.msg)
 		numGoroutines++
 		go func() {
 			step3.err = checkReleaseBuild(repoOwner, repoName,
@@ -178,7 +185,7 @@ func shift(next string) (err error) {
 	// Step 4: Make sure that all the assigned GitHub issues are closed.
 	step4 := &result{msg: "Check the relevant release milestone"}
 	if !skipMilestoneCheck && !config.Local.Plugins.Milestones {
-		log.Go(step4.msg)
+		log.V(log.Verbose).Go(step4.msg)
 		numGoroutines++
 		go func() {
 			step4.err = checkMilestone(repoOwner, repoName,
@@ -193,11 +200,11 @@ func shift(next string) (err error) {
 	for i := 0; i < numGoroutines; i++ {
 		res := <-results
 		if res.err == nil {
-			log.Ok(res.msg)
+			log.V(log.Verbose).Ok(res.msg)
 			continue
 		}
 
-		log.Fail(res.msg)
+		log.V(log.Verbose).Fail(res.msg)
 		if stderr := res.stderr; stderr != nil && stderr.Len() != 0 {
 			log.Print(stderr)
 		}

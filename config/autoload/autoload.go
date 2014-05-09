@@ -24,7 +24,7 @@ import (
 
 // Read the global configuration file and save it into config.Global.
 func init() {
-	log.Run("Read the global configuration file")
+	log.V(log.Verbose).Run("Read the global configuration file")
 	cfg, err := config.ReadGlobalConfig()
 	if err != nil {
 		log.Fatalf("Error: %n\n", err)
@@ -34,7 +34,7 @@ func init() {
 
 // Read the local configuration file and save it into config.Local.
 func init() {
-	log.Run("Read the local configuration file")
+	log.V(log.Verbose).Run("Read the local configuration file")
 	cfg, err := config.ReadLocalConfig()
 	if err != nil {
 		log.Fatalf("Error: %n\n", err)
