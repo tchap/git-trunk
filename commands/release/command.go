@@ -170,7 +170,7 @@ func shift(next string) (err error) {
 
 	// Step 3: Make sure that the CI release build is green.
 	step3 := &result{msg: "Check the latest release build"}
-	if !skipBuildCheck && !config.Local.Plugins.BuildStatus {
+	if config.Local.Plugins.BuildStatus && !skipBuildCheck {
 		log.V(log.Verbose).Go(step3.msg)
 		numGoroutines++
 		go func() {
@@ -178,22 +178,18 @@ func shift(next string) (err error) {
 				config.Local.Branches.Release, config.Global.Tokens.CircleCi)
 			results <- step3
 		}()
-	} else {
-		log.Skip(step3.msg)
 	}
 
 	// Step 4: Make sure that all the assigned GitHub issues are closed.
 	step4 := &result{msg: "Check the relevant release milestone"}
-	if !skipMilestoneCheck && !config.Local.Plugins.Milestones {
+	if config.Local.Plugins.Milestones && !skipMilestoneCheck {
 		log.V(log.Verbose).Go(step4.msg)
 		numGoroutines++
 		go func() {
 			step4.err = checkMilestone(repoOwner, repoName,
-				versions.Release, config.Global.Tokens.GitHub)
+				config.Global.Tokens.GitHub, versions.Release)
 			results <- step4
 		}()
-	} else {
-		log.Skip(step4.msg)
 	}
 
 	// Wait for the steps goroutines to return and print the results.
@@ -251,7 +247,7 @@ func shift(next string) (err error) {
 	}()
 
 	// Step 5: Reset master to point to the current release.
-	log.Run("Reset master to point to the current release")
+	log.V(log.Verbose).Run("Reset master to point to the current release")
 	stderr, err = git.ResetHard(config.Local.Branches.Production, config.Local.Branches.Release)
 	if err != nil {
 		log.Print(stderr)
@@ -259,7 +255,7 @@ func shift(next string) (err error) {
 	}
 
 	// Step 6: Commit the new production version string.
-	log.Run("Commit the new production version string")
+	log.V(log.Verbose).Run("Commit the new production version string")
 	stderr, err = commitProductionVersion(nextVersions.Production.String())
 	if err != nil {
 		log.Print(stderr)
@@ -267,7 +263,7 @@ func shift(next string) (err error) {
 	}
 
 	// Step 7: Tag master with the appropriate release tag.
-	log.Run("Tag master with the appropriate release tag")
+	log.V(log.Verbose).Run("Tag master with the appropriate release tag")
 	stderr, err = git.Tag("v" + nextVersions.Production.String())
 	if err != nil {
 		log.Print(stderr)
@@ -275,6 +271,10 @@ func shift(next string) (err error) {
 	}
 
 	// Step 8: Close the relevant GitHub milestone.
+	if config.Local.Plugins.Milestones {
+		log.V(log.Verbose).Run("Close the relevant release milestone")
+		err = closeMilestone(repoOwner, repoName, config.Global.Tokens.GitHub, versions.Release)
+	}
 	return
 }
 
@@ -324,35 +324,70 @@ func checkReleaseBuild(owner, repository, branch, token string) error {
 	return nil
 }
 
-func checkMilestone(owner, repository string, ver *version.ReleaseVersion, token string) error {
-	if token == "" {
-		return errors.New("github: token is not set")
-	}
-	if !regexp.MustCompile("[0-9a-f]{40}").MatchString(token) {
-		return errors.New("github: invalid token string")
+func checkMilestone(owner, repository, token string, ver *version.ReleaseVersion) error {
+	client, err := newGitHubClient(owner, repository, token)
+	if err != nil {
+		return err
 	}
 
-	t := &oauth.Transport{
-		Token: &oauth.Token{AccessToken: token},
+	m, err := getMilestone(client, owner, repository, ver)
+	if err != nil {
+		return err
 	}
-	c := github.NewClient(t.Client())
-	ms, _, err := c.Issues.ListMilestones(owner, repository, &github.MilestoneListOptions{
+
+	if *m.OpenIssues == 0 {
+		return nil
+	}
+	return fmt.Errorf("milestone not closable: %v", *m.Title)
+}
+
+func closeMilestone(owner, repository, token string, ver *version.ReleaseVersion) error {
+	client, err := newGitHubClient(owner, repository, token)
+	if err != nil {
+		return err
+	}
+
+	m, err := getMilestone(client, owner, repository, ver)
+	if err != nil {
+		return err
+	}
+
+	_, _, err = client.Issues.EditMilestone(owner, repository, *m.Number, &github.Milestone{
+		State: github.String("closed"),
+	})
+	return err
+}
+
+func getMilestone(client *github.Client, owner, repository string, ver *version.ReleaseVersion) (*github.Milestone, error) {
+	ms, _, err := client.Issues.ListMilestones(owner, repository, &github.MilestoneListOptions{
 		State: "open",
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	title := fmt.Sprintf("Release %v.%v.%v", ver.Major, ver.Minor, ver.Patch)
 	for _, m := range ms {
 		if *m.Title == title {
-			if *m.OpenIssues == 0 {
-				return nil
-			}
-			return fmt.Errorf("milestone not closable: %v", title)
+			return &m, nil
 		}
 	}
-	return fmt.Errorf("milestone not found: %v", title)
+
+	return nil, errors.New("release milestone not found")
+}
+
+func newGitHubClient(owner, repository, token string) (*github.Client, error) {
+	if token == "" {
+		return nil, errors.New("github: token is not set")
+	}
+	if !regexp.MustCompile("[0-9a-f]{40}").MatchString(token) {
+		return nil, errors.New("github: invalid token string")
+	}
+
+	t := &oauth.Transport{
+		Token: &oauth.Token{AccessToken: token},
+	}
+	return github.NewClient(t.Client()), nil
 }
 
 func getGitHubOwnerAndRepository() (owner, repository string, stderr *bytes.Buffer, err error) {
