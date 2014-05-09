@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with trunk.  If not, see <http://www.gnu.org/licenses/>.
 
-package shift
+package release
 
 import (
 	// stdlib
@@ -50,7 +50,7 @@ var ErrActionsFailed = errors.New("some of the requested actions have failed")
 
 var Command = &gocli.Command{
 	UsageLine: `
-  shift [-remote=REMOTE] [-next=NEXT]
+  release [-remote=REMOTE] [-next=NEXT]
         [-skip_milestone_check] [-skip_build_check]`,
 	Short: "perform the release shifting operation",
 	Long: `
@@ -142,7 +142,7 @@ func shift(next string) (err error) {
 	}
 
 	// Step 1: Make sure that the workspace and Git index are clean.
-	log.Run("Check the workspace and Git index")
+	log.Run("Make sure the workspace and Git index are clean")
 	if stdout, _, err := git.EnsureCleanWorkingTree(); err != nil {
 		log.Print(stdout.String())
 		return err
@@ -152,8 +152,8 @@ func shift(next string) (err error) {
 	var numGoroutines int
 	results := make(chan *result)
 
-	// Step 2: Make sure that develop and release are up to date.
-	step2 := &result{msg: "Check whether the local and remote refs are synchronized"}
+	// Step 2: Make sure that develop, release and master are up to date.
+	step2 := &result{msg: "Make sure that all significant branches are synchronized"}
 	log.Go(step2.msg)
 	numGoroutines++
 	go func() {
@@ -163,12 +163,12 @@ func shift(next string) (err error) {
 
 	// Step 3: Make sure that the CI release build is green.
 	step3 := &result{msg: "Check the latest release build"}
-	if !skipBuildCheck && !config.Local.DisableCircleCi {
+	if !skipBuildCheck && !config.Local.Plugins.BuildStatus {
 		log.Go(step3.msg)
 		numGoroutines++
 		go func() {
 			step3.err = checkReleaseBuild(repoOwner, repoName,
-				config.Local.ReleaseBranch, config.Global.CircleCiToken)
+				config.Local.Branches.Release, config.Global.Tokens.CircleCi)
 			results <- step3
 		}()
 	} else {
@@ -177,12 +177,12 @@ func shift(next string) (err error) {
 
 	// Step 4: Make sure that all the assigned GitHub issues are closed.
 	step4 := &result{msg: "Check the relevant release milestone"}
-	if !skipMilestoneCheck && !config.Local.DisableMilestones {
+	if !skipMilestoneCheck && !config.Local.Plugins.Milestones {
 		log.Go(step4.msg)
 		numGoroutines++
 		go func() {
 			step4.err = checkMilestone(repoOwner, repoName,
-				versions.Release, config.Global.GitHubToken)
+				versions.Release, config.Global.Tokens.GitHub)
 			results <- step4
 		}()
 	} else {
@@ -245,7 +245,7 @@ func shift(next string) (err error) {
 
 	// Step 5: Reset master to point to the current release.
 	log.Run("Reset master to point to the current release")
-	stderr, err = git.ResetHard(config.Local.ProductionBranch, config.Local.ReleaseBranch)
+	stderr, err = git.ResetHard(config.Local.Branches.Production, config.Local.Branches.Release)
 	if err != nil {
 		log.Print(stderr)
 		return
@@ -278,9 +278,9 @@ func checkBranchesInSync() (stderr *bytes.Buffer, err error) {
 	}
 
 	bs := [...]string{
-		config.Local.TrunkBranch,
-		config.Local.ReleaseBranch,
-		config.Local.ProductionBranch,
+		config.Local.Branches.Trunk,
+		config.Local.Branches.Release,
+		config.Local.Branches.Production,
 	}
 	for _, b := range bs {
 		stderr, err = git.EnsureBranchesEqual(b, remote+"/"+b)
@@ -384,7 +384,7 @@ func getGitHubOwnerAndRepository() (owner, repository string, stderr *bytes.Buff
 
 func commitProductionVersion(prodVersion string) (stderr *bytes.Buffer, err error) {
 	// Checkout master
-	stderr, err = git.Checkout(config.Local.ProductionBranch)
+	stderr, err = git.Checkout(config.Local.Branches.Production)
 	if err != nil {
 		return
 	}

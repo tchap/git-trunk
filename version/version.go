@@ -101,7 +101,7 @@ type Versions struct {
 }
 
 func LoadVersions() (versions *Versions, stderr *bytes.Buffer, err error) {
-	trunkString, stderr, err := readVersion(config.Local.TrunkBranch)
+	trunkString, stderr, err := readVersion(config.Local.Branches.Trunk)
 	if err != nil {
 		return
 	}
@@ -110,7 +110,7 @@ func LoadVersions() (versions *Versions, stderr *bytes.Buffer, err error) {
 		return
 	}
 
-	releaseString, stderr, err := readVersion(config.Local.ReleaseBranch)
+	releaseString, stderr, err := readVersion(config.Local.Branches.Release)
 	if err != nil {
 		return
 	}
@@ -119,7 +119,7 @@ func LoadVersions() (versions *Versions, stderr *bytes.Buffer, err error) {
 		return
 	}
 
-	productionString, stderr, err := readVersion(config.Local.ProductionBranch)
+	productionString, stderr, err := readVersion(config.Local.Branches.Production)
 	if err != nil {
 		return
 	}

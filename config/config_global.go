@@ -31,8 +31,10 @@ import (
 var Global *GlobalConfig
 
 type GlobalConfig struct {
-	CircleCiToken string `yaml:"circleci_token"`
-	GitHubToken   string `yaml:"github_token"`
+	Tokens struct {
+		GitHub   string `yaml:"github"`
+		CircleCi string `yaml:"circleci"`
+	} `yaml:"tokens"`
 }
 
 func ReadGlobalConfig() (*GlobalConfig, error) {

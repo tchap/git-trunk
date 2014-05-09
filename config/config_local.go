@@ -31,11 +31,15 @@ import (
 var Local *LocalConfig
 
 type LocalConfig struct {
-	TrunkBranch       string `yaml:"trunk_branch"`
-	ReleaseBranch     string `yaml:"release_branch"`
-	ProductionBranch  string `yaml:"production_branch"`
-	DisableMilestones bool   `yaml:"disable_milestones"`
-	DisableCircleCi   bool   `yaml:"disable_circleci"`
+	Branches struct {
+		Trunk      string `yaml:"trunk"`
+		Release    string `yaml:"release"`
+		Production string `yaml:"production"`
+	} `yaml:"branches"`
+	Plugins struct {
+		Milestones  bool `yaml:"github_milestones"`
+		BuildStatus bool `yaml:"circleci_status"`
+	} `yaml:"plugins"`
 }
 
 func ReadLocalConfig() (*LocalConfig, error) {
@@ -71,14 +75,14 @@ func ReadLocalConfig() (*LocalConfig, error) {
 
 	// Fill in the defaults where necessary.
 Exit:
-	if config.TrunkBranch == "" {
-		config.TrunkBranch = DefaultTrunkBranch
+	if config.Branches.Trunk == "" {
+		config.Branches.Trunk = DefaultTrunkBranch
 	}
-	if config.ReleaseBranch == "" {
-		config.ReleaseBranch = DefaultReleaseBranch
+	if config.Branches.Release == "" {
+		config.Branches.Release = DefaultReleaseBranch
 	}
-	if config.ProductionBranch == "" {
-		config.ProductionBranch = DefaultProductionBranch
+	if config.Branches.Production == "" {
+		config.Branches.Production = DefaultProductionBranch
 	}
 
 	// Return the complete LocalConfig instance.
