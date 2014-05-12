@@ -26,7 +26,7 @@ import (
 
 func push() error {
 	log.Println("\n---> Pushing changes upstream")
-	_, stderr, err := git.Git("push", "--tags",
+	_, stderr, err := git.Git("push", "--force", "--tags", remote,
 		config.Local.Branches.Trunk,
 		config.Local.Branches.Release,
 		config.Local.Branches.Production)

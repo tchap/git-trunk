@@ -204,7 +204,7 @@ func finishRelease(repoOwner, repoName string, versions, nextVersions *version.V
 	}
 	// Re-open the milestone in case there is an error encountered later.
 	defer func() {
-		if err != nil {
+		if err != nil && config.Local.Plugins.Milestones {
 			log.V(log.Verbose).Run("Re-open the relevant release milestone")
 			ex := openMilestone(repoOwner, repoName, config.Global.Tokens.GitHub, versions.Release)
 			if ex != nil {

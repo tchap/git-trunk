@@ -30,7 +30,7 @@ import (
 	"github.com/tchap/gocli"
 )
 
-var ErrActionsFailed = errors.New("some of the requested actions have failed")
+var ErrActionsFailed = errors.New("some tasks have failed")
 
 var Command = &gocli.Command{
 	UsageLine: `
@@ -105,6 +105,8 @@ func run(cmd *gocli.Command, args []string) {
 }
 
 func shift(next string) (err error) {
+	log.Println("\n---> Loading configuration")
+
 	// Parse the relevant Git remote to get the GitHub repository name and owner.
 	log.V(log.Verbose).Run("Read the GitHub repository name and owner")
 	repoOwner, repoName, stderr, err := getGitHubOwnerAndRepository()

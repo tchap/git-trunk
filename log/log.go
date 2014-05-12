@@ -72,19 +72,19 @@ func (l Logger) Run(msg string) {
 }
 
 func (l Logger) Skip(msg string) {
-	l.logf("[SKIP]  %v\n", msg)
+	l.logf("[SKIP] %v\n", msg)
 }
 
 func (l Logger) Go(msg string) {
-	l.logf("[GO]  %v\n", msg)
+	l.logf("[GO]   %v\n", msg)
 }
 
 func (l Logger) Ok(msg string) {
-	l.logf("[OK]  %v\n", msg)
+	l.logf("[OK]   %v\n", msg)
 }
 
 func (l Logger) Fail(msg string) {
-	l.logf("[FAIL]  %v\n", msg)
+	l.logf("[FAIL] %v\n", msg)
 }
 
 func (l Logger) Print(v ...interface{}) {
