@@ -60,9 +60,9 @@ func startRelease(repoName, repoOwner string, versions, nextVersions *version.Ve
 		return failure(stderr, err)
 	}
 
-	err = version.Write(nextVersions.Production)
+	stderr, err = version.WriteAndCommit(nextVersions.Production.String())
 	if err != nil {
-		return
+		return failure(stderr, err)
 	}
 
 	// Step 2: Increment the minor version number and commit it into develop.
@@ -86,9 +86,9 @@ func startRelease(repoName, repoOwner string, versions, nextVersions *version.Ve
 		}
 	}()
 
-	err = version.Write(nextVersions.Trunk)
+	stderr, err = version.WriteAndCommit(nextVersions.Trunk.String())
 	if err != nil {
-		return
+		return failure(stderr, err)
 	}
 
 	// Step 3: Create a new GitHub milestone for the next release.

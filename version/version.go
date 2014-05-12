@@ -20,7 +20,12 @@ package version
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 
@@ -198,4 +203,56 @@ func parseVersion(versionString, versionSuffix string) (*version, bool) {
 	patch, _ := strconv.ParseUint(parts[3], 10, 32)
 
 	return &version{uint(major), uint(minor), uint(patch)}, true
+}
+
+func WriteAndCommit(version string) (stderr *bytes.Buffer, err error) {
+	// Get the absolute path of package.json
+	root, stderr, err := git.RepositoryRootAbsolutePath()
+	if err != nil {
+		return
+	}
+	path := filepath.Join(root, "package.json")
+
+	// Read package.json
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	content, err := ioutil.ReadAll(file)
+	if err != nil {
+		return
+	}
+
+	// Parse and replace stuff in package.json
+	p := regexp.MustCompile(fmt.Sprintf("\"version\": \"%v\"", AnyMatcher))
+	newContent := p.ReplaceAllLiteral(content,
+		[]byte(fmt.Sprintf("\"version\": \"%v\"", version)))
+	if bytes.Equal(content, newContent) {
+		err = errors.New("package.json: failed to replace version string")
+		return
+	}
+
+	// Write package.json
+	_, err = file.Seek(0, os.SEEK_SET)
+	if err != nil {
+		return
+	}
+	err = file.Truncate(0)
+	if err != nil {
+		return
+	}
+	_, err = io.Copy(file, bytes.NewReader(newContent))
+	if err != nil {
+		return
+	}
+
+	// Commit package.json
+	_, stderr, err = git.Git("add", path)
+	if err != nil {
+		return
+	}
+	_, stderr, err = git.Git("commit", "-m", fmt.Sprintf("Bump version to %v", version))
+	return
 }
