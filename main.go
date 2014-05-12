@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"github.com/tchap/trunk/commands/release"
+	_ "github.com/tchap/trunk/config/autoload"
 
 	"github.com/tchap/gocli"
 )

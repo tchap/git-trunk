@@ -20,34 +20,16 @@ package release
 import (
 	// stdlib
 	"bytes"
-	"errors"
-	"fmt"
-	"io"
-	"io/ioutil"
-	"net/url"
-	"os"
-	"os/exec"
-	"os/signal"
-	"path/filepath"
-	"regexp"
-	"strings"
 
 	// trunk
-	"github.com/tchap/trunk/circleci"
 	"github.com/tchap/trunk/config"
-	_ "github.com/tchap/trunk/config/autoload"
 	"github.com/tchap/trunk/git"
 	"github.com/tchap/trunk/log"
 	"github.com/tchap/trunk/version"
-
-	// others
-	"code.google.com/p/goauth2/oauth"
-	"github.com/google/go-github/github"
-	"github.com/tchap/gocli"
 )
 
-func startRelease(next *version.Versions) (err error) {
-	log.Printf("\n---> Starting release %v\n", next.Production)
+func startRelease(repoName, repoOwner string, versions, nextVersions *version.Versions) (err error) {
+	log.Printf("\n---> Starting release %v\n", nextVersions.Production)
 
 	// Step 1: Reset release to point to develop and commit the new version string.
 	log.V(log.Verbose).Run("Reset release to point to develop")
@@ -78,7 +60,7 @@ func startRelease(next *version.Versions) (err error) {
 		return failure(stderr, err)
 	}
 
-	err = version.Write(next.Production)
+	err = version.Write(nextVersions.Production)
 	if err != nil {
 		return
 	}
@@ -104,7 +86,7 @@ func startRelease(next *version.Versions) (err error) {
 		}
 	}()
 
-	err = version.Write(next.Trunk)
+	err = version.Write(nextVersions.Trunk)
 	if err != nil {
 		return
 	}
@@ -113,14 +95,14 @@ func startRelease(next *version.Versions) (err error) {
 	if config.Local.Plugins.Milestones {
 		log.V(log.Verbose).Run("Create a milestone for the next release")
 		err = createMilestone(repoOwner, repoName,
-			config.Global.Tokens.GitHub, next.Production)
+			config.Global.Tokens.GitHub, nextVersions.Production)
 		if err != nil {
 			return failure(nil, err)
 		}
 		defer func() {
 			if err != nil {
 				ex := deleteMilestone(repoOwner, repoName,
-					config.Global.Tokens.GitHub, next.Production)
+					config.Global.Tokens.GitHub, nextVersions.Production)
 				if ex != nil {
 					failure(nil, ex)
 				}

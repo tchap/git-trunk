@@ -46,6 +46,10 @@ func (v *version) clone() *version {
 	return &version{v.Major, v.Minor, v.Patch}
 }
 
+func (v *version) BaseString() string {
+	return fmt.Sprintf("%v.%v.%v", v.Major, v.Minor, v.Patch)
+}
+
 type TrunkVersion struct {
 	*version
 }

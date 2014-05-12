@@ -20,11 +20,12 @@ package release
 import (
 	// trunk
 	"github.com/tchap/trunk/config"
-	_ "github.com/tchap/trunk/config/autoload"
 	"github.com/tchap/trunk/git"
+	"github.com/tchap/trunk/log"
 )
 
 func push() error {
+	log.Println("\n---> Pushing changes upstream")
 	_, stderr, err := git.Git("push", "--tags",
 		config.Local.Branches.Trunk,
 		config.Local.Branches.Release,
@@ -32,4 +33,5 @@ func push() error {
 	if err != nil {
 		return failure(stderr, err)
 	}
+	return nil
 }
