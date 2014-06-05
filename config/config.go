@@ -34,6 +34,10 @@ const (
 	ConfigBranch = "trunk-config"
 )
 
+type Local struct {
+	Plugins []map[string]interface{} `yaml:"plugins"`
+}
+
 func ReadLocalConfig() (content, stderr *bytes.Buffer, err error) {
 	return git.ShowByBranch(ConfigBranch, LocalConfigFileName)
 }
