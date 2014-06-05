@@ -38,7 +38,7 @@ func main() {
   trunk is a git plugin that provides some useful shortcuts for
   Trunk Based Development on GitHub. See the list of subcommands.`
 
-	// Register subscommands.
+	// Register subcommands.
 	trunk.MustRegisterSubcommand(release.Command)
 
 	// Run the application.
