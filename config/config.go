@@ -17,11 +17,50 @@
 
 package config
 
-const (
-	LocalConfigFileName  = ".trunkrc"
-	GlobalConfigFileName = ".trunkrc"
+import (
+	"bytes"
+	"io"
+	"os"
+	"os/user"
+	"path/filepath"
 
-	DefaultTrunkBranch      = "develop"
-	DefaultReleaseBranch    = "release"
-	DefaultProductionBranch = "master"
+	"github.com/tchap/trunk/git"
 )
+
+const (
+	LocalConfigFileName  = "trunk.yml"
+	GlobalConfigFileName = ".trunk.yml"
+
+	ConfigBranch = "trunk-config"
+)
+
+func ReadLocalConfig() (content, stderr *bytes.Buffer, err error) {
+	return git.ShowByBranch(ConfigBranch, LocalConfigFileName)
+}
+
+func ReadGlobalConfig() (content *bytes.Buffer, err error) {
+	// Generate the global config file path.
+	me, err := user.Current()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(me.HomeDir, GlobalConfigFileName)
+
+	// Read the global config file.
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+
+	var p bytes.Buffer
+	if _, err := io.Copy(&p, file); err != nil {
+		return nil, err
+	}
+
+	// Return the content.
+	return &p, nil
+}
