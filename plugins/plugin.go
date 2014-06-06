@@ -26,7 +26,7 @@ import (
 type PluginFactory interface {
 	PluginName() string
 	NewPluginConfig() interface{}
-	NewPlugin(localConfig interface{}, globalConfig *config.Global) (Plugin, error)
+	NewPlugin(pluginConfig interface{}, globalConfig *config.Global) (Plugin, error)
 }
 
 type Plugin interface {
