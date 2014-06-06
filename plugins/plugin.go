@@ -17,7 +17,11 @@
 
 package plugins
 
-import "github.com/tchap/go-dwarves/dwarves"
+import (
+	"github.com/tchap/trunk/config"
+
+	"github.com/tchap/go-dwarves/dwarves"
+)
 
 type PluginFactory interface {
 	PluginName() string
@@ -26,7 +30,7 @@ type PluginFactory interface {
 }
 
 type Plugin interface {
-	Check(*config.GlobalConfig) *dwarves.Task
-	ReleaseFinish(*config.GlobalConfig) *dwarves.Task
-	ReleaseStart(*config.GlobalConfig) *dwarves.Task
+	Check() *dwarves.Task
+	ReleaseFinish() *dwarves.Task
+	ReleaseStart() *dwarves.Task
 }
