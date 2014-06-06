@@ -35,14 +35,28 @@ const (
 )
 
 type Local struct {
+	Branches struct {
+		Trunk      string `yaml:"trunk"`
+		Release    string `yaml:"release"`
+		Production string `yaml:"production"`
+	} `yaml:"branches"`
 	Plugins []map[string]interface{} `yaml:"plugins"`
 }
 
-func ReadLocalConfig() (content, stderr *bytes.Buffer, err error) {
-	return git.ShowByBranch(ConfigBranch, LocalConfigFileName)
+func Local(pluginNames []string, pluginConfigs []interface{}) (*Local, error) {
+	content, stderr, err := git.ShowByBranch(ConfigBranch, LocalConfigFileName)
+	if err != nil {
+		log.Fatal(stderr)
+		return nil, err
+	}
+
+	cfg := Local{Plugins: make([]map[string]interface{})}
+	for i := 0; i < len(pluginNames); i++ {
+		cfg.Plugins[pluginName[i]] = pluginConfigs[i]
+	}
 }
 
-func ReadGlobalConfig() (content *bytes.Buffer, err error) {
+func Global() (content *bytes.Buffer, err error) {
 	// Generate the global config file path.
 	me, err := user.Current()
 	if err != nil {
