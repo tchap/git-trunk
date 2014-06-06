@@ -61,7 +61,7 @@ func InstantiatePlugins(cfg *config.Global) (ps []Plugin, err error) {
 	// Build the list of enabled plugins.
 	var plugins []Plugin
 	for i, factory := range factory {
-		plugin, err := factory.NewPlugin(pluginConfigs[i], globalConfig)
+		plugin, err := factory.NewPlugin(pluginConfigs[i], localConfig, globalConfig)
 		if err != nil {
 			return nil, err
 		}
