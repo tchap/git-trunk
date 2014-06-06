@@ -26,14 +26,14 @@ import (
 	"github.com/tchap/go-dwarves/dwarves"
 )
 
-func InstantiatePlugins(cfg *config.Global) (ps []Plugin, err error) {
-	// Build the list of all available plugins.
-	var factories = [...]PluginFactory{
-		circleci.NewPluginFactory(),
-		git.NewPluginFactory(),
-		github.NewPluginFactory(),
-	}
+// All available plugin factories are registered here.
+var factories = [...]PluginFactory{
+	circleci.NewPluginFactory(),
+	git.NewPluginFactory(),
+	github.NewPluginFactory(),
+}
 
+func InstantiatePlugins(cfg *config.Global) (ps []Plugin, err error) {
 	// Collect available plugin names and their associated config structs.
 	var (
 		pluginNames   []string
