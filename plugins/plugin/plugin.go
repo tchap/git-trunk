@@ -15,22 +15,14 @@
 // You should have received a copy of the GNU General Public License
 // along with trunk.  If not, see <http://www.gnu.org/licenses/>.
 
-package plugins
+package plugin
 
-import (
-	"github.com/tchap/trunk/config"
+import "github.com/tchap/go-dwarves/dwarves"
 
-	"github.com/tchap/go-dwarves/dwarves"
-)
-
-type PluginFactory interface {
-	PluginName() string
-	NewPluginConfig() interface{}
-	NewPlugin(pluginConfig interface{}, local *config.Local, global *config.Global) (Plugin, error)
-}
+type Factory func(localConfigContent, globalConfigContent []byte) (Plugin, error)
 
 type Plugin interface {
-	Check() *dwarves.Task
-	ReleaseFinish() *dwarves.Task
-	ReleaseStart() *dwarves.Task
+	CheckTask() *dwarves.Task
+	ReleaseFinishTask() *dwarves.Task
+	ReleaseStartTask() *dwarves.Task
 }

@@ -19,49 +19,39 @@ package plugins
 
 import (
 	"github.com/tchap/trunk/config"
+	"github.com/tchap/trunk/log"
 	"github.com/tchap/trunk/plugins/circleci"
 	"github.com/tchap/trunk/plugins/git"
 	"github.com/tchap/trunk/plugins/github"
-
-	"github.com/tchap/go-dwarves/dwarves"
+	"github.com/tchap/trunk/plugins/plugin"
 )
 
-// All available plugin factories are registered here.
-var factories = [...]PluginFactory{
-	circleci.NewPluginFactory(),
-	git.NewPluginFactory(),
-	github.NewPluginFactory(),
+// All available plugin factories are listed here.
+var factories = [...]plugin.Factory{
+	circleci.NewPlugin,
+	git.NewPlugin,
+	github.NewPlugin,
 }
 
-func InstantiatePlugins(cfg *config.Global) (ps []Plugin, err error) {
-	// Collect available plugin names and their associated config structs.
-	var (
-		pluginNames   []string
-		pluginConfigs []interface{}
-	)
-	for _, factory := range factories {
-		if configStruct := factory.NewPluginConfig(); configStruct != nil {
-			pluginNames = append(pluginNames, factory.PluginName())
-			pluginConfigs = append(pluginConfigs, configStruct)
-		}
-	}
-
-	// Feed the config structs from the local configuration file.
-	localConfig, err := config.Local(pluginNames, pluginConfigs)
+func GetEnabledPlugins() (enabledPlugins []plugin.Plugin, err error) {
+	// Read local config.
+	localConfigContent, stderr, err := config.ReadLocalConfig()
 	if err != nil {
+		log.Fatalln(stderr)
 		return nil, err
 	}
 
-	// Read global config as well.
-	globalConfig, err := config.Global()
+	// Read global config.
+	globalConfigContent, err := config.ReadGlobalConfig()
 	if err != nil {
+		log.Fatalln(stderr)
 		return nil, err
 	}
 
 	// Build the list of enabled plugins.
-	var plugins []Plugin
-	for i, factory := range factory {
-		plugin, err := factory.NewPlugin(pluginConfigs[i], localConfig, globalConfig)
+	var plugins []plugin.Plugin
+	for _, factory := range factories {
+		plugin, err := factory(localConfigContent.Bytes(), globalConfigContent.Bytes())
 		if err != nil {
 			return nil, err
 		}
@@ -70,29 +60,5 @@ func InstantiatePlugins(cfg *config.Global) (ps []Plugin, err error) {
 		}
 	}
 
-	// Run the Check tasks.
-	var tasks []*dwarves.Task
-	for _, plugin := range plugins {
-		tasks = append(tasks, plugin.CheckTask())
-	}
-	supervisor := dwarves.NewSupervisor(tasks...)
-	monitorCh := make(chan *dwarves.TaskError)
-	if err := supervisor.DispatchDwarves(monitorCh); err != nil {
-		panic(err)
-	}
-	for {
-		event, ok := <-monitorCh
-		if !ok {
-			break
-		}
-		if event.Error != nil {
-			err = errors.New("failed to initialise plugins")
-		}
-	}
-
-	// Return the list of enabled plugins in case all the checks passed.
-	if err == nil {
-		ps = plugins
-	}
-	return
+	return plugins, nil
 }
